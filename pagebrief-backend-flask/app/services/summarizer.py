@@ -8,6 +8,7 @@ from app.services.fetcher import clean_text, trim_input
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 _WORD_RE = re.compile(r"\b[\wÀ-ÿ'-]+\b", flags=re.UNICODE)
+_NOISE_RE = re.compile(r"^(page\s+\d+|\d+|https?://\S+)$", flags=re.IGNORECASE)
 
 _MODE_PROMPTS = {
     "general": "Découpe en utiles, actions concrètes et points flous.",
@@ -41,21 +42,48 @@ _ACTION_PATTERNS = [
 ]
 
 
-def summarize_payload(*, title: str | None, url: str | None, mode: str, source_text: str, source_kind: str, settings, llm_client):
-    cleaned_text = trim_input(source_text, settings.max_input_chars)
-    local = _build_local_summary(title=title, url=url, mode=mode, text=cleaned_text, source_kind=source_kind)
+def summarize_payload(*, title: str | None, url: str | None, mode: str, source_text: str, source_kind: str, settings, llm_client, logger=None):
+    raw_text = clean_text(source_text)
+    llm_input = trim_input(raw_text, settings.max_input_chars)
+    if logger:
+        logger.info(
+            "Nettoyage entrée | raw_chars=%s clean_chars=%s llm_input_chars=%s max_input_chars=%s",
+            len(source_text or ""),
+            len(raw_text or ""),
+            len(llm_input or ""),
+            settings.max_input_chars,
+        )
+    local = _build_local_summary(title=title, url=url, mode=mode, text=raw_text, source_kind=source_kind)
 
+    llm_text = _llm_excerpt(llm_input)
     llm_payload = {
         "mode": mode,
         "title": clean_text(title),
         "url": clean_text(url),
         "source_kind": source_kind,
         "instruction": _MODE_PROMPTS.get(mode, _MODE_PROMPTS["general"]),
-        "text": cleaned_text,
+        "text": llm_text,
     }
 
-    enriched = llm_client.summarize(llm_payload, local)
+    if logger:
+        logger.info(
+            "Résumé heuristique prêt | words=%s tldr_len=%s llm_text_chars=%s",
+            local.get("word_count"),
+            len(local.get("tldr") or ""),
+            len(llm_text or ""),
+        )
+
+    enriched = llm_client.summarize(llm_payload, local, logger=logger)
     return enriched
+
+
+def _llm_excerpt(text: str, head: int = 2200, tail: int = 1000) -> str:
+    text = clean_text(text)
+    if len(text) <= head + tail + 64:
+        return text
+    left = text[:head].rsplit(" ", 1)[0].strip()
+    right = text[-tail:].split(" ", 1)[-1].strip()
+    return f"{left}\n\n[... contenu tronqué pour accélérer l'analyse ...]\n\n{right}"
 
 
 def _build_local_summary(*, title: str | None, url: str | None, mode: str, text: str, source_kind: str) -> dict:
@@ -90,6 +118,8 @@ def _candidate_sentences(text: str) -> list[str]:
     for item in raw:
         if len(item) < 40:
             continue
+        if _looks_noisy(item):
+            continue
         key = item.casefold()
         if key in seen:
             continue
@@ -98,7 +128,7 @@ def _candidate_sentences(text: str) -> list[str]:
     if kept:
         return kept
 
-    fallback = [clean_text(line) for line in text.split("\n") if clean_text(line)]
+    fallback = [clean_text(line) for line in text.split("\n") if clean_text(line) and not _looks_noisy(clean_text(line))]
     return fallback[:12]
 
 
@@ -169,3 +199,15 @@ def _build_tldr(*, title: str | None, summary_points: list[str]) -> str:
 
 def _word_count(text: str) -> int:
     return len(_WORD_RE.findall(text or ""))
+
+
+def _looks_noisy(text: str) -> bool:
+    sample = clean_text(text)
+    if not sample:
+        return True
+    if _NOISE_RE.match(sample):
+        return True
+    words = _WORD_RE.findall(sample)
+    if len(words) <= 3 and len(sample) < 30:
+        return True
+    return False

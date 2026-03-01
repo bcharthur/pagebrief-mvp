@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PageBrief",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Résumé utile d'une page web en 1 clic.",
   "action": {
     "default_title": "PageBrief",
@@ -14,9 +14,7 @@
     "storage"
   ],
   "host_permissions": [
-    "http://localhost:8000/*",
-    "http://127.0.0.1:8000/*",
-    "http://localhost:8080/*",
-    "http://127.0.0.1:8080/*"
+    "http://*/*",
+    "https://*/*"
   ]
 }

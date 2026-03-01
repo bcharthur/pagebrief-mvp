@@ -13,6 +13,7 @@ Extension MVP volontairement simple pour réutiliser la structure de ton ancien 
 2. Active **Mode développeur**
 3. Clique **Charger l'extension non empaquetée**
 4. Sélectionne ce dossier
+5. Après chaque modification de `manifest.json` ou `popup.js`, clique **Recharger** sur l'extension
 
 ## Ce que fait ce MVP
 
@@ -24,6 +25,11 @@ Extension MVP volontairement simple pour réutiliser la structure de ton ancien 
   - actions à retenir
   - risques / points flous
   - TL;DR
+
+## Debug utile
+
+- Clique droit sur le popup > **Inspecter** pour ouvrir la console du popup
+- La console affiche maintenant la réponse brute du backend en cas de souci
 
 ## Limites connues
 
