@@ -13,19 +13,20 @@
         <button id="menuToggle" class="ghost-icon" type="button" aria-label="Ouvrir le menu">☰</button>
         <div class="brand-meta">
           <p class="eyebrow">PageBrief</p>
-          <h1 id="docTitle">Aucun document analysé</h1>
+          <h1 id="docTitle">Aucune analyse chargée</h1>
         </div>
         <span id="sourceBadge" class="source-badge">PAGE</span>
       </div>
 
-      <div class="summary-strip">
+      <div class="summary-strip compact-two">
         <span class="summary-pill"><strong id="readingTime">-</strong><em>Lecture</em></span>
-        <span class="summary-pill"><strong id="enginePill">-</strong><em>Moteur</em></span>
         <span class="summary-pill"><strong id="confidencePill">-</strong><em>Confiance</em></span>
-        <span class="summary-pill"><strong id="scopeBadge">document</strong><em>Portée</em></span>
       </div>
 
       <div id="statusBar" class="status-bar">Prêt.</div>
+      <div id="statusProgressWrap" class="status-progress hidden" aria-hidden="true">
+        <span id="statusProgressFill" class="status-progress-fill"></span>
+      </div>
     </header>
 
     <aside id="menuDrawer" class="menu-drawer hidden" aria-hidden="true">
@@ -45,7 +46,7 @@
           <button class="nav-item" data-view-target="settings" type="button">Réglages</button>
         </nav>
 
-        <div class="drawer-actions">
+        <div class="drawer-actions spaced-actions">
           <button id="clearHistoryBtn" class="secondary danger" type="button">Vider l'historique de session</button>
         </div>
       </div>
@@ -59,8 +60,8 @@
             <span id="formatBadge" class="soft-pill">Express</span>
           </div>
           <h2 id="panelTitle">Vue Express</h2>
-          <p id="analysisBasis" class="hero-text">Aucune analyse pour cet onglet.</p>
-          <p id="sourceNote" class="hero-note">Lance une analyse depuis la vue “Analyser”.</p>
+          <p id="analysisBasis" class="hero-text">Aucune analyse chargée.</p>
+          <p id="sourceNote" class="hero-note">Lance une analyse depuis la vue “Analyser” ou recharge un élément depuis l’historique.</p>
         </div>
 
         <section class="accordion-card">
@@ -118,12 +119,35 @@
             </div>
           </div>
 
+          <div class="hint-card slim">
+            <strong id="currentTargetTitle">Onglet actif</strong>
+            <p id="currentTargetMeta">Aucune URL détectée.</p>
+          </div>
+
           <label class="label-block">Format</label>
-          <div class="segmented-grid" id="formatTabs">
-            <button type="button" class="seg active" data-format="express">Express</button>
-            <button type="button" class="seg" data-format="analytic">Analytique</button>
-            <button type="button" class="seg" data-format="decision">Décision</button>
-            <button type="button" class="seg" data-format="study">Étude</button>
+          <div class="format-grid" id="formatTabs">
+            <button type="button" class="seg active" data-format="express" title="Vue la plus rapide : idéale pour situer un document.">
+              <span class="seg-top"><span>Express</span><span class="plan-badge free">Gratuit</span><span class="info-dot" title="Vue la plus rapide : idéale pour situer un document.">i</span></span>
+              <span class="seg-sub">Intro + points + conclusion</span>
+            </button>
+            <button type="button" class="seg" data-format="analytic" title="Pour comprendre la structure et les idées fortes.">
+              <span class="seg-top"><span>Analytique</span><span class="plan-badge premium">Premium</span><span class="info-dot" title="Pour comprendre la structure et les idées fortes.">i</span></span>
+              <span class="seg-sub">Structure, repères, éléments marquants</span>
+            </button>
+            <button type="button" class="seg" data-format="decision" title="Pour décider vite : actions, risques et zones floues.">
+              <span class="seg-top"><span>Décision</span><span class="plan-badge premium">Premium</span><span class="info-dot" title="Pour décider vite : actions, risques et zones floues.">i</span></span>
+              <span class="seg-sub">Actions, risques, flous, recommandation</span>
+            </button>
+            <button type="button" class="seg" data-format="study" title="Pour apprendre : définitions, notions et repères.">
+              <span class="seg-top"><span>Étude</span><span class="plan-badge premium">Premium</span><span class="info-dot" title="Pour apprendre : définitions, notions et repères.">i</span></span>
+              <span class="seg-sub">Définitions, notions, repères</span>
+            </button>
+          </div>
+
+          <div class="hint-card format-guide">
+            <strong id="formatGuideTitle">Express · Gratuit</strong>
+            <p id="formatGuideSummary">Intro courte, points clés, conclusion. Parfait pour un scan rapide.</p>
+            <p id="formatGuideBestFor">Idéal pour : articles, pages produit, PDF longs à situer rapidement.</p>
           </div>
 
           <label class="label-block" for="scopeSelect">Portée</label>
@@ -134,7 +158,7 @@
 
           <div class="hint-card">
             <strong id="selectionStateTitle">Sélection</strong>
-            <p id="selectionStateText">Aucun passage capturé pour cet onglet.</p>
+            <p id="selectionStateText">Aucun passage capturé pour le moment.</p>
           </div>
 
           <div class="cta-stack">
@@ -172,7 +196,7 @@
           <label class="label-block" for="backendUrl">Backend URL</label>
           <input id="backendUrl" class="text-field" type="text" value="http://localhost:8000" />
           <button id="saveSettingsBtn" class="primary soft" type="button">Enregistrer</button>
-          <p class="subtle-text">Astuce : la largeur du panneau Chrome reste gérée par le navigateur. Tu peux l'élargir à la main en glissant sa bordure.</p>
+          <p class="subtle-text">Astuce : active aussi “Autoriser l’accès aux URL de fichiers” dans chrome://extensions pour analyser des PDF locaux.</p>
         </div>
       </section>
     </main>

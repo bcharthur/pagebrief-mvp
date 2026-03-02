@@ -8,10 +8,10 @@ export const dom = {
   docTitle: document.getElementById("docTitle"),
   sourceBadge: document.getElementById("sourceBadge"),
   readingTime: document.getElementById("readingTime"),
-  enginePill: document.getElementById("enginePill"),
   confidencePill: document.getElementById("confidencePill"),
-  scopeBadge: document.getElementById("scopeBadge"),
   statusBar: document.getElementById("statusBar"),
+  statusProgressWrap: document.getElementById("statusProgressWrap"),
+  statusProgressFill: document.getElementById("statusProgressFill"),
 
   views: {
     render: document.getElementById("renderView"),
@@ -45,6 +45,11 @@ export const dom = {
     analyzeSelectionBtn: document.getElementById("analyzeSelectionBtn"),
     selectionStateTitle: document.getElementById("selectionStateTitle"),
     selectionStateText: document.getElementById("selectionStateText"),
+    currentTargetTitle: document.getElementById("currentTargetTitle"),
+    currentTargetMeta: document.getElementById("currentTargetMeta"),
+    formatGuideTitle: document.getElementById("formatGuideTitle"),
+    formatGuideSummary: document.getElementById("formatGuideSummary"),
+    formatGuideBestFor: document.getElementById("formatGuideBestFor"),
   },
 
   history: {

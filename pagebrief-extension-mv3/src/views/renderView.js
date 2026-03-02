@@ -1,16 +1,15 @@
 import { capitalize } from "../helpers.js";
 
-function createItemCard(text, empty = false) {
-  const div = document.createElement("div");
-  div.className = `item-card${empty ? " empty" : ""}`;
-  div.textContent = text;
-  return div;
+function createItemCard(text, isEmpty = false) {
+  const item = document.createElement("div");
+  item.className = `item-card${isEmpty ? " empty" : ""}`;
+  item.textContent = text;
+  return item;
 }
 
-function renderList(target, items, emptyMessage) {
+function renderList(target, values, emptyMessage) {
   target.innerHTML = "";
-  const values = Array.isArray(items) ? items.filter(Boolean) : [];
-  if (!values.length) {
+  if (!Array.isArray(values) || !values.length) {
     target.appendChild(createItemCard(emptyMessage, true));
     return;
   }
@@ -65,16 +64,15 @@ function renderAnnexBlocks(target, blocks) {
 }
 
 export function applyEmptyRender(dom, format = "express") {
-  dom.docTitle.textContent = "Aucun document analysé";
   dom.render.panelTitle.textContent = `Vue ${capitalize(format)}`;
   dom.render.formatBadge.textContent = capitalize(format);
   dom.render.introLabel.textContent = "Introduction";
   dom.render.pointsLabel.textContent = "Points clés";
   dom.render.conclusionLabel.textContent = "Conclusion";
   dom.render.annexLabel.textContent = "Blocs utiles";
-  dom.render.analysisBasis.textContent = "Aucune analyse pour cet onglet.";
-  dom.render.sourceNote.textContent = "Lance une analyse depuis la vue “Analyser”.";
-  renderList(dom.render.intro, [], "Aucune analyse pour cet onglet.");
+  dom.render.analysisBasis.textContent = "Aucune analyse chargée.";
+  dom.render.sourceNote.textContent = "Lance une analyse ou ouvre un élément depuis l’historique.";
+  renderList(dom.render.intro, [], "Aucune analyse chargée.");
   renderList(dom.render.keyPoints, [], "Aucun point clé disponible.");
   renderAnnexBlocks(dom.render.annexBlocks, []);
   dom.render.conclusion.textContent = "En attente d'une première analyse.";

@@ -4,9 +4,9 @@ import { dom } from "./src/dom.js";
 import { readHistory, writeHistory } from "./src/storage.js";
 import { getActiveTab, getTabState, patchTabState } from "./src/tabState.js";
 import { sendToBackend, extractCurrentTab } from "./src/api.js";
-import { normalizeUrl, capitalize, buildHistoryExplanation, buildHistoryKey, isTabStateStaleForUrl } from "./src/helpers.js";
+import { capitalize, buildHistoryExplanation, buildHistoryKey } from "./src/helpers.js";
 import { applyEmptyRender, renderResult, buildPlainText } from "./src/views/renderView.js";
-import { setActiveFormat, setLoading, renderSelectionState } from "./src/views/analyzeView.js";
+import { setActiveFormat, setLoading, renderSelectionState, renderActiveTarget } from "./src/views/analyzeView.js";
 import { renderHistory } from "./src/views/historyView.js";
 import { renderSettings } from "./src/views/settingsView.js";
 
@@ -57,7 +57,7 @@ function wireEvents() {
     button.addEventListener("click", async () => {
       state.currentFormat = button.dataset.format || "express";
       setActiveFormat(dom, state.currentFormat);
-      if (!hasCurrentResult()) {
+      if (!state.currentResult) {
         applyEmptyRender(dom, state.currentFormat);
       }
       await persistSettings();
@@ -145,47 +145,76 @@ function setStatus(message, type = "") {
   dom.statusBar.className = `status-bar ${type}`.trim();
 }
 
+function startProgress(label) {
+  stopProgress();
+  state.progressStartedAt = Date.now();
+  dom.statusProgressWrap.classList.remove("hidden");
+  dom.statusProgressWrap.setAttribute("aria-hidden", "false");
+  const tick = () => {
+    const elapsed = Math.max(0, Date.now() - state.progressStartedAt);
+    const seconds = Math.max(1, Math.floor(elapsed / 1000));
+    const pct = Math.min(94, Math.round(8 + (1 - Math.exp(-elapsed / 20000)) * 86));
+    dom.statusProgressFill.style.width = `${pct}%`;
+    setStatus(`${label} • ${seconds}s • ${pct}%`, "warn");
+  };
+  tick();
+  state.progressTimer = window.setInterval(tick, 350);
+}
+
+function stopProgress(finalMessage = "", type = "") {
+  if (state.progressTimer) {
+    window.clearInterval(state.progressTimer);
+    state.progressTimer = null;
+  }
+  state.progressStartedAt = 0;
+  dom.statusProgressFill.style.width = "100%";
+  if (finalMessage) {
+    setStatus(finalMessage, type);
+  }
+  window.setTimeout(() => {
+    if (!state.progressTimer) {
+      dom.statusProgressWrap.classList.add("hidden");
+      dom.statusProgressWrap.setAttribute("aria-hidden", "true");
+      dom.statusProgressFill.style.width = "0%";
+    }
+  }, finalMessage ? 450 : 0);
+}
+
+function computeConfidence(result) {
+  if (result?.confidence_label) return result.confidence_label;
+  if (result?.engine === "llm") return "Élevée";
+  if (result?.engine === "heuristic") return "Moyenne";
+  return "-";
+}
+
 function updateSummaryMeta(meta = {}) {
   if (meta.sourceKind) dom.sourceBadge.textContent = String(meta.sourceKind).toUpperCase();
   if (typeof meta.readingTime !== "undefined") dom.readingTime.textContent = meta.readingTime ? `${meta.readingTime} min` : "-";
-  if (typeof meta.engine !== "undefined") dom.enginePill.textContent = meta.engine || "-";
   if (typeof meta.confidence !== "undefined") dom.confidencePill.textContent = meta.confidence || "-";
-  if (typeof meta.scope !== "undefined") dom.scopeBadge.textContent = meta.scope || "document";
-}
-
-function hasCurrentResult() {
-  return Boolean(dom.render.analysisBasis.dataset.hasResult === "1");
-}
-
-function markRenderHasResult(value) {
-  dom.render.analysisBasis.dataset.hasResult = value ? "1" : "0";
 }
 
 function applyResultToUi(result) {
+  state.currentResult = result;
+  state.currentFormat = result.view_format || state.currentFormat;
+  setActiveFormat(dom, state.currentFormat);
   renderResult(dom, result);
-  markRenderHasResult(true);
   updateSummaryMeta({
     sourceKind: result.source_kind,
     readingTime: result.reading_time_min,
-    engine: result.engine,
-    confidence: result.confidence_label,
-    scope: result.scope,
+    confidence: computeConfidence(result),
   });
 }
 
-function applyEmptyStateForCurrentTab(message) {
-  const previousTitle = dom.docTitle.textContent;
+function applyEmptyState(message) {
+  state.currentResult = null;
   applyEmptyRender(dom, state.currentFormat);
-  if (state.activeTabUrl && previousTitle && previousTitle !== "Aucun document analysé") {
-    dom.docTitle.textContent = previousTitle;
+  if (state.activeTabTitle) {
+    dom.docTitle.textContent = state.activeTabTitle;
   }
-  markRenderHasResult(false);
   updateSummaryMeta({
     sourceKind: /\.pdf($|\?)/i.test(state.activeTabUrl) ? "pdf" : "html",
     readingTime: null,
-    engine: "-",
     confidence: "-",
-    scope: dom.analyze.scopeSelect.value,
   });
   setStatus(message, "warn");
 }
@@ -195,50 +224,33 @@ async function syncForActiveTab() {
   if (!tab) {
     state.activeTabId = null;
     state.activeTabUrl = "";
-    applyEmptyStateForCurrentTab("Aucun onglet actif détecté.");
+    state.activeTabTitle = "";
+    renderActiveTarget(dom, "Aucun onglet actif", "");
+    if (!state.currentResult) applyEmptyState("Aucun onglet actif détecté.");
     renderSelectionState(dom, null);
     return;
   }
 
   state.activeTabId = tab.id;
   state.activeTabUrl = tab.url || "";
-  dom.docTitle.textContent = tab.title || "Onglet actif";
-  updateSummaryMeta({ sourceKind: /\.pdf($|\?)/i.test(state.activeTabUrl) ? "pdf" : "html" });
+  state.activeTabTitle = tab.title || "Onglet actif";
+  renderActiveTarget(dom, state.activeTabTitle, state.activeTabUrl);
 
-  let tabState = await getTabState(state.activeTabId);
-  const isPdf = /\.pdf($|\?)/i.test(state.activeTabUrl);
-
-  if (isTabStateStaleForUrl(tabState, state.activeTabUrl)) {
-    await patchTabState(state.activeTabId, {
-      url: state.activeTabUrl,
-      title: tab.title || "",
-      sourceKind: isPdf ? "pdf" : "html",
-      status: "",
-      result: null,
-      pendingSelection: null,
-    });
-    tabState = await getTabState(state.activeTabId);
+  if (!state.currentResult) {
+    dom.docTitle.textContent = state.activeTabTitle;
+    updateSummaryMeta({ sourceKind: /\.pdf($|\?)/i.test(state.activeTabUrl) ? "pdf" : "html" });
   }
 
-  state.lastKnownSelection = tabState?.pendingSelection || null;
-
-  if (tabState?.result) {
-    applyResultToUi(tabState.result);
-    setStatus(tabState.status || "Dernière analyse restaurée pour cet onglet.", "ok");
-  } else {
-    applyEmptyStateForCurrentTab(tabState?.updatedAt
-      ? "Cet onglet a changé de page : relance l'analyse."
-      : "Aucune analyse enregistrée pour cet onglet.");
-  }
-
+  const selectionState = await getTabState(state.activeTabId);
+  state.lastKnownSelection = selectionState?.pendingSelection || null;
   await refreshSelectionState(state.lastKnownSelection);
 }
 
 async function refreshSelectionState(cached = null) {
   let selection = cached;
   if (!selection && typeof state.activeTabId === "number") {
-    const tabState = await getTabState(state.activeTabId);
-    selection = tabState?.pendingSelection || null;
+    const selectionState = await getTabState(state.activeTabId);
+    selection = selectionState?.pendingSelection || null;
   }
 
   state.lastKnownSelection = selection || null;
@@ -251,7 +263,7 @@ async function refreshSelectionState(cached = null) {
 }
 
 async function handlePickClick() {
-  setStatus("Mode ciblage activé : clique sur un bloc de texte dans cette page.");
+  setStatus("Mode ciblage activé : clique sur un bloc de texte dans cette page.", "warn");
 
   try {
     const tab = await getActiveTab();
@@ -268,7 +280,7 @@ async function handlePickClick() {
 
 async function handleInspectClick() {
   setLoading(dom, true, "inspect");
-  setStatus("Extraction du contenu de l'onglet…");
+  startProgress("Analyse du document en cours");
 
   try {
     const tab = await getActiveTab();
@@ -276,10 +288,11 @@ async function handleInspectClick() {
 
     state.activeTabId = tab.id;
     state.activeTabUrl = tab.url || "";
+    state.activeTabTitle = tab.title || "Onglet actif";
 
     const preferSelection = dom.analyze.scopeSelect.value === "selection";
-    const tabState = await getTabState(state.activeTabId);
-    const pendingSelection = tabState?.pendingSelection;
+    const selectionState = await getTabState(state.activeTabId);
+    const pendingSelection = selectionState?.pendingSelection;
     let requestPayload;
     let sourceHint;
     let shouldClearSelection = false;
@@ -307,36 +320,29 @@ async function handleInspectClick() {
         focus_hint: extraction.selectionLabel || "",
       };
       sourceHint = extraction.sourceKind === "pdf"
-        ? "PDF public : extraction via URL si nécessaire."
+        ? "PDF analysé depuis son URL ou son aperçu." 
         : requestPayload.scope === "selection"
           ? "Passage sélectionné dans la page HTML."
           : "Page HTML analysée depuis l'onglet courant.";
       updateSummaryMeta({ sourceKind: extraction.sourceKind });
     }
 
+    state.lastRequestPayload = requestPayload;
     const result = await sendToBackend(dom.settings.backendUrl.value, requestPayload);
-    const statusMessage = `Vue ${result.format_label || state.currentFormat} prête (${result.engine || "unknown"}). ${sourceHint}`;
-    setStatus(statusMessage, "ok");
+    const statusMessage = `Vue ${result.format_label || capitalize(state.currentFormat)} prête. ${sourceHint}`;
+    stopProgress(statusMessage, "ok");
     applyResultToUi(result);
-    await patchTabState(state.activeTabId, {
-      url: requestPayload.url,
-      title: requestPayload.title,
-      sourceKind: result.source_kind || "page",
-      status: statusMessage,
-      result,
-      lastAnalyzedAt: Date.now(),
-      pendingSelection: shouldClearSelection ? null : pendingSelection,
-    });
     await upsertHistoryEntry(requestPayload, result);
 
-    if (shouldClearSelection) {
+    if (shouldClearSelection && typeof state.activeTabId === "number") {
+      await patchTabState(state.activeTabId, { pendingSelection: null });
       state.lastKnownSelection = null;
     }
 
     setActiveView("render", true);
     await persistSettings();
   } catch (error) {
-    setStatus(error?.message || "Erreur pendant l'analyse.", "error");
+    stopProgress(error?.message || "Erreur pendant l'analyse.", "error");
   } finally {
     await refreshSelectionState();
     setLoading(dom, false);
@@ -345,18 +351,18 @@ async function handleInspectClick() {
 
 async function handleAnalyzeSelectionClick() {
   setLoading(dom, true, "selection");
-  setStatus("Envoi du passage ciblé au backend…");
+  startProgress("Analyse du passage en cours");
 
   try {
     const tab = await getActiveTab();
     if (!tab?.id) throw new Error("Aucun onglet actif détecté.");
 
     state.activeTabId = tab.id;
-    const tabState = await getTabState(state.activeTabId);
-    const selection = tabState?.pendingSelection;
+    const selectionState = await getTabState(state.activeTabId);
+    const selection = selectionState?.pendingSelection;
 
     if (!selection?.text) {
-      throw new Error("Aucune sélection enregistrée pour cet onglet. Utilise d'abord “Cibler un passage”.");
+      throw new Error("Aucune sélection enregistrée. Utilise d'abord “Cibler un passage”.");
     }
 
     const requestPayload = {
@@ -368,27 +374,20 @@ async function handleAnalyzeSelectionClick() {
       focus_hint: selection.label || "Passage ciblé",
     };
 
+    state.lastRequestPayload = requestPayload;
     const result = await sendToBackend(dom.settings.backendUrl.value, requestPayload);
-    const statusMessage = `Vue ${result.format_label || state.currentFormat} prête (${result.engine || "unknown"}). Passage ciblé analysé.`;
+    const statusMessage = `Vue ${result.format_label || capitalize(state.currentFormat)} prête. Passage ciblé analysé.`;
 
-    setStatus(statusMessage, "ok");
+    stopProgress(statusMessage, "ok");
     applyResultToUi(result);
-    await patchTabState(state.activeTabId, {
-      url: selection.url,
-      title: selection.title,
-      sourceKind: selection.sourceKind || "html",
-      status: statusMessage,
-      result,
-      lastAnalyzedAt: Date.now(),
-      pendingSelection: null,
-    });
+    await patchTabState(state.activeTabId, { pendingSelection: null });
     await upsertHistoryEntry(requestPayload, result);
     state.lastKnownSelection = null;
 
     setActiveView("render", true);
     await persistSettings();
   } catch (error) {
-    setStatus(error?.message || "Erreur pendant l'analyse ciblée.", "error");
+    stopProgress(error?.message || "Erreur pendant l'analyse ciblée.", "error");
   } finally {
     await refreshSelectionState();
     setLoading(dom, false);
@@ -396,15 +395,9 @@ async function handleAnalyzeSelectionClick() {
 }
 
 async function handleCopyClick() {
-  if (typeof state.activeTabId !== "number") {
-    setStatus("Aucun onglet actif détecté.", "warn");
-    return;
-  }
-
-  const tabState = await getTabState(state.activeTabId);
-  const result = tabState?.result;
+  const result = state.currentResult;
   if (!result) {
-    setStatus("Aucun rendu disponible pour cet onglet.", "warn");
+    setStatus("Aucun rendu chargé.", "warn");
     return;
   }
 
@@ -464,7 +457,7 @@ function previewHistoryEntry(entry) {
     setActiveFormat(dom, state.currentFormat);
   }
   applyResultToUi(entry.result);
-  setStatus("Aperçu chargé depuis l'historique de session.", "ok");
+  setStatus("Rendu chargé depuis l'historique de session.", "ok");
   setActiveView("render", true);
   persistSettings().catch(console.warn);
 }
