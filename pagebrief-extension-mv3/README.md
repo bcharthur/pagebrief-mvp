@@ -1,37 +1,47 @@
-# PageBrief extension (Chrome MV3)
+# PageBrief Frontend V4
 
-Extension MVP volontairement simple pour réutiliser la structure de ton ancien projet :
+Refonte du frontend de l'extension PageBrief pour le side panel Chrome.
 
-- `manifest.json`
-- `popup.html`
-- `popup.css`
-- `popup.js`
+## Ce qui change
 
-## Installation locale
+- Interface refondue en **vues** séparées :
+  - `Résumé`
+  - `Analyser`
+  - `Historique`
+  - `Réglages`
+- Menu latéral repliable (`☰`) pour naviguer entre les vues.
+- Vue Résumé plus propre avec **accordéons**.
+- Historique de session conservé via `chrome.storage.session`.
+- Résultat toujours **attaché à l'onglet actif** (si une analyse existe pour cet onglet).
+
+## Structure
+
+- `panel.html` : shell du panneau
+- `panel.css` : style global
+- `panel.js` : orchestration
+- `src/`
+  - `constants.js`
+  - `dom.js`
+  - `helpers.js`
+  - `state.js`
+  - `storage.js`
+  - `tabState.js`
+  - `api.js`
+  - `views/`
+    - `renderView.js`
+    - `analyzeView.js`
+    - `historyView.js`
+    - `settingsView.js`
+
+## Installation
 
 1. Ouvre `chrome://extensions`
-2. Active **Mode développeur**
-3. Clique **Charger l'extension non empaquetée**
+2. Active le **Mode développeur**
+3. Clique sur **Charger l'extension non empaquetée**
 4. Sélectionne ce dossier
-5. Après chaque modification de `manifest.json` ou `popup.js`, clique **Recharger** sur l'extension
+5. Clique sur l'icône de l'extension pour ouvrir le side panel
 
-## Ce que fait ce MVP
+## Note
 
-- Extrait le texte de l'onglet courant (priorité au texte sélectionné si assez long)
-- Envoie le contenu au backend
-- Affiche :
-  - résumé en 5 points
-  - temps de lecture estimé
-  - actions à retenir
-  - risques / points flous
-  - TL;DR
-
-## Debug utile
-
-- Clique droit sur le popup > **Inspecter** pour ouvrir la console du popup
-- La console affiche maintenant la réponse brute du backend en cas de souci
-
-## Limites connues
-
-- Sur une page PDF, l'extension n'extrait pas le texte du viewer Chrome. Elle envoie l'URL : le backend tente alors de télécharger le PDF si l'URL est publique.
-- Pour une version plus premium/stylée, la prochaine étape recommandée est `WXT` ou `Plasmo` + `React` + `Tailwind` + `shadcn/ui`.
+Le navigateur Chrome garde la main sur la largeur réelle du side panel.
+Tu peux l'élargir manuellement en faisant glisser sa bordure.

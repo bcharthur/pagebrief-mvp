@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PageBrief</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand-row">
+        <button id="menuToggle" class="ghost-icon" type="button" aria-label="Ouvrir le menu">☰</button>
+        <div class="brand-meta">
+          <p class="eyebrow">PageBrief</p>
+          <h1 id="docTitle">Aucun document analysé</h1>
+        </div>
+        <span id="sourceBadge" class="source-badge">PAGE</span>
+      </div>
+
+      <div class="summary-strip">
+        <span class="summary-pill"><strong id="readingTime">-</strong><em>Lecture</em></span>
+        <span class="summary-pill"><strong id="enginePill">-</strong><em>Moteur</em></span>
+        <span class="summary-pill"><strong id="confidencePill">-</strong><em>Confiance</em></span>
+        <span class="summary-pill"><strong id="scopeBadge">document</strong><em>Portée</em></span>
+      </div>
+
+      <div id="statusBar" class="status-bar">Prêt.</div>
+    </header>
+
+    <aside id="menuDrawer" class="menu-drawer hidden" aria-hidden="true">
+      <div class="drawer-card">
+        <div class="drawer-head">
+          <div>
+            <p class="eyebrow">Menu</p>
+            <h2>Navigation</h2>
+          </div>
+          <button id="closeDrawerBtn" class="ghost-icon" type="button" aria-label="Fermer le menu">✕</button>
+        </div>
+
+        <nav class="drawer-nav">
+          <button class="nav-item active" data-view-target="render" type="button">Résumé</button>
+          <button class="nav-item" data-view-target="analyze" type="button">Analyser</button>
+          <button class="nav-item" data-view-target="history" type="button">Historique</button>
+          <button class="nav-item" data-view-target="settings" type="button">Réglages</button>
+        </nav>
+
+        <div class="drawer-actions">
+          <button id="clearHistoryBtn" class="secondary danger" type="button">Vider l'historique de session</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="view-stage">
+      <section id="renderView" class="view active" data-view="render">
+        <div class="hero-card">
+          <div class="hero-topline">
+            <p class="eyebrow">Rendu</p>
+            <span id="formatBadge" class="soft-pill">Express</span>
+          </div>
+          <h2 id="panelTitle">Vue Express</h2>
+          <p id="analysisBasis" class="hero-text">Aucune analyse pour cet onglet.</p>
+          <p id="sourceNote" class="hero-note">Lance une analyse depuis la vue “Analyser”.</p>
+        </div>
+
+        <section class="accordion-card">
+          <button class="accordion-trigger" type="button" data-accordion-target="introPanel" aria-expanded="true">
+            <span id="introLabel">Introduction</span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div id="introPanel" class="accordion-panel open">
+            <div id="intro" class="stack-list"></div>
+          </div>
+        </section>
+
+        <section class="accordion-card">
+          <button class="accordion-trigger" type="button" data-accordion-target="pointsPanel" aria-expanded="true">
+            <span id="pointsLabel">Points clés</span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div id="pointsPanel" class="accordion-panel open">
+            <div id="keyPoints" class="stack-list"></div>
+          </div>
+        </section>
+
+        <section class="accordion-card compact-card">
+          <button class="accordion-trigger" type="button" data-accordion-target="conclusionPanel" aria-expanded="true">
+            <span id="conclusionLabel">Conclusion</span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div id="conclusionPanel" class="accordion-panel open">
+            <p id="conclusion" class="conclusion-text">En attente d'une première analyse.</p>
+          </div>
+        </section>
+
+        <section class="accordion-card">
+          <button class="accordion-trigger" type="button" data-accordion-target="annexPanel" aria-expanded="false">
+            <span id="annexLabel">Blocs utiles</span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div id="annexPanel" class="accordion-panel">
+            <div id="annexBlocks" class="annex-list"></div>
+          </div>
+        </section>
+
+        <footer class="footer-actions">
+          <button id="copyBtn" class="secondary" type="button">Copier le rendu</button>
+          <button id="refreshBtn" class="primary soft" type="button">Ré-analyser</button>
+        </footer>
+      </section>
+
+      <section id="analyzeView" class="view hidden" data-view="analyze">
+        <div class="section-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Analyser</p>
+              <h2>Préparer une nouvelle lecture</h2>
+            </div>
+          </div>
+
+          <label class="label-block">Format</label>
+          <div class="segmented-grid" id="formatTabs">
+            <button type="button" class="seg active" data-format="express">Express</button>
+            <button type="button" class="seg" data-format="analytic">Analytique</button>
+            <button type="button" class="seg" data-format="decision">Décision</button>
+            <button type="button" class="seg" data-format="study">Étude</button>
+          </div>
+
+          <label class="label-block" for="scopeSelect">Portée</label>
+          <select id="scopeSelect" class="select-field">
+            <option value="document">Document</option>
+            <option value="selection">Sélection</option>
+          </select>
+
+          <div class="hint-card">
+            <strong id="selectionStateTitle">Sélection</strong>
+            <p id="selectionStateText">Aucun passage capturé pour cet onglet.</p>
+          </div>
+
+          <div class="cta-stack">
+            <button id="inspectBtn" class="primary" type="button">Analyser l'onglet actif</button>
+            <button id="pickBtn" class="secondary" type="button">Cibler un passage</button>
+            <button id="analyzeSelectionBtn" class="secondary" type="button" disabled>Analyser la sélection</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="historyView" class="view hidden" data-view="history">
+        <div class="section-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Session</p>
+              <h2>Historique</h2>
+            </div>
+            <span id="historyCountBadge" class="soft-pill">0</span>
+          </div>
+          <p id="historyMeta" class="subtle-text">Aucun document enregistré.</p>
+          <input id="historySearch" class="text-field" type="search" placeholder="Rechercher un document ou une URL" />
+          <div id="historyList" class="history-list"></div>
+        </div>
+      </section>
+
+      <section id="settingsView" class="view hidden" data-view="settings">
+        <div class="section-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Réglages</p>
+              <h2>Paramètres légers</h2>
+            </div>
+          </div>
+
+          <label class="label-block" for="backendUrl">Backend URL</label>
+          <input id="backendUrl" class="text-field" type="text" value="http://localhost:8000" />
+          <button id="saveSettingsBtn" class="primary soft" type="button">Enregistrer</button>
+          <p class="subtle-text">Astuce : la largeur du panneau Chrome reste gérée par le navigateur. Tu peux l'élargir à la main en glissant sa bordure.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

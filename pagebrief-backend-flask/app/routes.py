@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request
 
+from app.config import SUPPORTED_FORMATS
 from app.schemas import SummarizeRequest
 from app.services.fetcher import fetch_pdf_text_from_url, is_probable_pdf_url
 from app.services.summarizer import summarize_payload
@@ -22,6 +23,7 @@ def health():
         {
             "status": "ok",
             "service": "pagebrief",
+            "supported_formats": list(SUPPORTED_FORMATS),
             "llm_enabled": settings.llm_enabled,
             "llm_provider": settings.llm_provider,
             "llm_model": settings.llm_model,
@@ -29,6 +31,11 @@ def health():
             "llm_timeout_s": settings.llm_timeout_s,
             "llm_max_output_tokens": settings.llm_max_output_tokens,
             "max_input_chars": settings.max_input_chars,
+            "llm_excerpt_head_chars": settings.llm_excerpt_head_chars,
+            "llm_excerpt_tail_chars": settings.llm_excerpt_tail_chars,
+            "max_selection_chars": settings.max_selection_chars,
+            "pdf_overview_threshold_chars": settings.pdf_overview_threshold_chars,
+            "pdf_overview_head_chars": settings.pdf_overview_head_chars,
             "log_level": settings.log_level,
         }
     )
@@ -43,8 +50,9 @@ def summarize_page():
     payload = SummarizeRequest.from_dict(raw_json)
 
     current_app.logger.info(
-        "Résumé demandé | mode=%s title=%r url=%r page_text_len=%s llm_enabled=%s provider=%s model=%s",
-        payload.mode,
+        "Résumé demandé | format=%s scope=%s title=%r url=%r page_text_len=%s llm_enabled=%s provider=%s model=%s",
+        payload.view_format,
+        payload.scope,
         (payload.title or "")[:80],
         payload.url,
         len((payload.page_text or "").strip()),
@@ -83,19 +91,23 @@ def summarize_page():
     result = summarize_payload(
         title=payload.title,
         url=payload.url,
-        mode=payload.mode,
+        view_format=payload.view_format,
         source_text=source_text,
         source_kind=source_kind,
+        scope=payload.scope,
+        focus_hint=payload.focus_hint,
         settings=settings,
         llm_client=llm_client,
         logger=current_app.logger,
     )
     current_app.logger.info(
-        "Résumé prêt | engine=%s reading_time=%s summary_points=%s actions=%s risks=%s",
+        "Résumé prêt | engine=%s format=%s strategy=%s reading_time=%s intro=%s points=%s annex=%s",
         result.get("engine"),
+        result.get("view_format"),
+        result.get("analysis_strategy"),
         result.get("reading_time_min"),
-        len(result.get("summary_points") or []),
-        len(result.get("actions") or []),
-        len(result.get("risks") or []),
+        len(result.get("intro_lines") or []),
+        len(result.get("key_points") or []),
+        len(result.get("annex_blocks") or []),
     )
     return jsonify({"ok": True, **result})

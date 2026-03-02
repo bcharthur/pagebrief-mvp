@@ -1,21 +1,16 @@
-# Reprise depuis ton ancien projet
+# Migration notes
 
-## Ce qui est repris
+Cette variante ajoute un vrai lot backend + frontend pour PageBrief :
 
-- séparation backend / extension
-- backend API minimal
-- logique d'appel LLM avec fallback local
-- extension MV3 en popup + injection dans l'onglet actif
+- rendu orienté **intro / points clés / conclusion / blocs annexes** ;
+- mode de **ciblage d'un passage** pour les pages HTML ;
+- analyse ciblée côté backend avec `scope=selection` ;
+- calcul du temps de lecture sur le texte complet ;
+- meilleur nettoyage des PDF publics.
 
-## Ce qui change
+## Remplacement rapide
 
-- le backend est en Flask (aligné avec ton souhait), mais conserve la simplicité de ton ancien projet
-- le frontend reste volontairement simple pour lancer vite et valider la traction
-- le produit évite le scraping de profils personnels et est plus propre RGPD/CNIL
-
-## Prochaine étape recommandée
-
-1. Valider le MVP avec 1 seul persona (ex: `dev` ou `legal`)
-2. Ajouter authentification + quota + Stripe
-3. Refaire le frontend avec WXT/Plasmo + React + Tailwind + shadcn/ui
-4. Ajouter mode side panel + historique local + templates métier
+1. Remplace le dossier `pagebrief-backend-flask`
+2. Remplace le dossier `pagebrief-extension-mv3`
+3. Recharge l'extension dans Chrome
+4. Redémarre le backend Flask

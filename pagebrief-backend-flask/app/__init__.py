@@ -22,7 +22,7 @@ def _setup_logging(app: Flask) -> None:
     )
     app.logger.setLevel(level)
     app.logger.info(
-        "PageBrief backend initialisé | host=%s port=%s llm_enabled=%s provider=%s model=%s base_url=%s timeout=%ss max_input=%s max_output=%s",
+        "PageBrief backend initialisé | host=%s port=%s llm_enabled=%s provider=%s model=%s base_url=%s timeout=%ss max_input=%s max_output=%s pdf_overview_threshold=%s",
         settings.app_host,
         settings.app_port,
         settings.llm_enabled,
@@ -32,6 +32,7 @@ def _setup_logging(app: Flask) -> None:
         settings.llm_timeout_s,
         settings.max_input_chars,
         settings.llm_max_output_tokens,
+        settings.pdf_overview_threshold_chars,
     )
 
 

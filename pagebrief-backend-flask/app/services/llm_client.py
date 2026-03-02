@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import time
 from typing import Any
 
@@ -31,27 +30,40 @@ class PageBriefLlmClient:
             "format": {
                 "type": "object",
                 "properties": {
-                    "summary_points": {
+                    "intro_lines": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 2,
+                        "maxItems": 3,
+                    },
+                    "key_points": {
                         "type": "array",
                         "items": {"type": "string"},
                         "minItems": 3,
-                        "maxItems": 4,
+                        "maxItems": 6,
                     },
-                    "actions": {
+                    "conclusion": {"type": "string"},
+                    "annex_blocks": {
                         "type": "array",
-                        "items": {"type": "string"},
                         "minItems": 1,
                         "maxItems": 3,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"},
+                                "items": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "minItems": 1,
+                                    "maxItems": 5,
+                                },
+                            },
+                            "required": ["title", "items"],
+                            "additionalProperties": False,
+                        },
                     },
-                    "risks": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "minItems": 1,
-                        "maxItems": 3,
-                    },
-                    "tldr": {"type": "string"},
                 },
-                "required": ["summary_points", "actions", "risks", "tldr"],
+                "required": ["intro_lines", "key_points", "conclusion", "annex_blocks"],
                 "additionalProperties": False,
             },
             "options": {
@@ -65,20 +77,21 @@ class PageBriefLlmClient:
             endpoint = f"{self.settings.llm_base_url.rstrip('/')}/api/generate"
             if logger:
                 logger.info(
-                    "Appel LLM -> %s | provider=%s model=%s prompt_chars=%s max_output=%s timeout=%ss",
+                    "Appel LLM -> %s | provider=%s model=%s prompt_chars=%s max_output=%s timeout=%ss format=%s strategy=%s",
                     endpoint,
                     self.settings.llm_provider,
                     self.settings.llm_model,
                     len(prompt),
                     self.settings.llm_max_output_tokens,
                     self.settings.llm_timeout_s,
+                    payload.get("view_format"),
+                    payload.get("analysis_strategy"),
                 )
             timeout = httpx.Timeout(connect=5.0, read=self.settings.llm_timeout_s, write=30.0, pool=5.0)
             with httpx.Client(timeout=timeout) as client:
                 response = client.post(endpoint, json=body)
                 response.raise_for_status()
                 data = response.json()
-            done_reason = data.get("done_reason")
             if logger:
                 logger.info(
                     "Réponse LLM reçue | status=%s | %.1f ms | prompt_eval=%s eval=%s done_reason=%s",
@@ -86,44 +99,51 @@ class PageBriefLlmClient:
                     (time.perf_counter() - started) * 1000,
                     data.get("prompt_eval_count"),
                     data.get("eval_count"),
-                    done_reason,
+                    data.get("done_reason"),
                 )
-            content = _extract_json_object(_strip_code_fences((data.get("response") or "").strip()))
-            if done_reason == "length":
+
+            content = _extract_json_payload((data.get("response") or "").strip())
+            if data.get("done_reason") == "length":
                 if logger:
                     logger.warning("Réponse LLM tronquée (done_reason=length) -> fallback | raw=%r", content[:400])
                 return fallback
 
             parsed = json.loads(content) if content else {}
-            summary_points = _normalize_list(parsed.get("summary_points"), limit=4)
-            actions = _normalize_list(parsed.get("actions"), limit=3)
-            risks = _normalize_list(parsed.get("risks"), limit=3)
-            tldr = str(parsed.get("tldr") or "").strip()
-            if len(summary_points) < 3 or not actions or not risks or not tldr:
+            intro_lines = _normalize_list(parsed.get("intro_lines"), limit=3)
+            key_points = _normalize_list(parsed.get("key_points"), limit=6)
+            conclusion = str(parsed.get("conclusion") or "").strip()
+            annex_blocks = _normalize_blocks(parsed.get("annex_blocks"), limit=3)
+
+            if len(intro_lines) < 2 or len(key_points) < 3 or not conclusion or not annex_blocks:
                 if logger:
                     logger.warning(
-                        "Réponse LLM incomplète -> fallback | summary_points=%s actions=%s risks=%s tldr=%s raw=%r",
-                        len(summary_points),
-                        len(actions),
-                        len(risks),
-                        bool(tldr),
+                        "Réponse LLM incomplète -> fallback | intro=%s points=%s conclusion=%s annex=%s raw=%r",
+                        len(intro_lines),
+                        len(key_points),
+                        bool(conclusion),
+                        len(annex_blocks),
                         content[:300],
                     )
                 return fallback
-            if not _looks_grounded(payload.get("text") or "", summary_points, actions, risks, tldr):
-                if logger:
-                    logger.warning("Réponse LLM suspecte (ancrage faible) -> fallback | raw=%r", content[:400])
-                return fallback
+
             merged = dict(fallback)
             merged.update(
                 {
-                    "summary_points": summary_points,
-                    "actions": actions,
-                    "risks": risks,
-                    "tldr": tldr,
+                    "intro_lines": intro_lines,
+                    "key_points": key_points,
+                    "conclusion": conclusion,
+                    "annex_blocks": annex_blocks,
+                    "summary_points": key_points,
+                    "tldr": conclusion,
                     "engine": "llm",
                 }
             )
+            confidence_label, confidence_reason = _confidence_for(
+                scope=str(fallback.get("scope") or "document"),
+                analysis_strategy=str(fallback.get("analysis_strategy") or "full"),
+            )
+            merged["confidence_label"] = confidence_label
+            merged["confidence_reason"] = confidence_reason
             if logger:
                 logger.info("Réponse LLM valide -> engine=llm")
             return merged
@@ -131,6 +151,47 @@ class PageBriefLlmClient:
             if logger:
                 logger.exception("Échec appel/parsing LLM -> fallback heuristique (%s)", exc)
             return fallback
+
+
+def _extract_json_payload(raw: str) -> str:
+    text = raw.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    text = text.strip()
+
+    if text.startswith("{") and text.endswith("}"):
+        return text
+
+    start = text.find("{")
+    if start < 0:
+        return text
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for idx, char in enumerate(text[start:], start=start):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == '{':
+            depth += 1
+        elif char == '}':
+            depth -= 1
+            if depth == 0:
+                return text[start: idx + 1]
+    return text
 
 
 def _normalize_list(value: Any, limit: int) -> list[str]:
@@ -141,7 +202,6 @@ def _normalize_list(value: Any, limit: int) -> list[str]:
         text = str(item or "").strip()
         if not text:
             continue
-        text = re.sub(r"\s+", " ", text)
         key = text.casefold()
         if key in seen:
             continue
@@ -152,66 +212,69 @@ def _normalize_list(value: Any, limit: int) -> list[str]:
     return out
 
 
+def _normalize_blocks(value: Any, limit: int) -> list[dict[str, Any]]:
+    raw_items = value if isinstance(value, list) else []
+    blocks: list[dict[str, Any]] = []
+    seen_titles: set[str] = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        items = _normalize_list(item.get("items"), limit=5)
+        if not title or not items:
+            continue
+        key = title.casefold()
+        if key in seen_titles:
+            continue
+        seen_titles.add(key)
+        blocks.append({"title": title, "items": items})
+        if len(blocks) >= limit:
+            break
+    return blocks
+
+
+def _confidence_for(*, scope: str, analysis_strategy: str) -> tuple[str, str]:
+    if scope == "selection" and analysis_strategy != "overview":
+        return "Élevée", "Passage ciblé + synthèse LLM sur une portée réduite."
+    if analysis_strategy == "overview":
+        return "Moyenne", "Vue large fondée sur un aperçu : utile pour situer, pas pour trancher seul."
+    return "Moyenne", "Synthèse LLM utile, mais à confirmer sur les passages sensibles."
+
+
 def _build_prompt(payload: dict[str, Any]) -> str:
     title = str(payload.get("title") or "").strip()
     url = str(payload.get("url") or "").strip()
     source_kind = str(payload.get("source_kind") or "").strip()
-    mode = str(payload.get("mode") or "general").strip()
+    view_format = str(payload.get("view_format") or "express").strip()
+    format_label = str(payload.get("format_label") or view_format).strip()
+    scope = str(payload.get("scope") or "document").strip()
+    focus_hint = str(payload.get("focus_hint") or "").strip()
     instruction = str(payload.get("instruction") or "").strip()
+    analysis_strategy = str(payload.get("analysis_strategy") or "full").strip()
+    analysis_basis = str(payload.get("analysis_basis") or "").strip()
+    section_labels = payload.get("section_labels") or {}
     text = str(payload.get("text") or "").strip()
     meta = {
-        "mode": mode,
+        "format": view_format,
+        "format_label": format_label,
+        "scope": scope,
         "title": title,
         "url": url,
         "source_kind": source_kind,
+        "focus_hint": focus_hint,
+        "analysis_strategy": analysis_strategy,
+        "analysis_basis": analysis_basis,
+        "section_labels": section_labels,
         "instruction": instruction,
     }
     return (
-        "Tu résumes un document pour une décision rapide.\n"
-        "Règles absolues : n'invente rien, n'infère aucune date, aucun chiffre, aucune ratification ou causalité si ce n'est pas explicitement écrit.\n"
-        "Si une information n'est pas explicitement présente, écris une formulation prudente ou 'Non précisé'.\n"
-        "Style : français clair, phrases courtes, utiles, orientées décision.\n"
-        "Retourne uniquement un JSON valide respectant le schéma demandé. Aucun markdown.\n"
-        "Contraintes de concision :\n"
-        "- summary_points: 3 à 4 éléments, 1 phrase courte chacun, max 18 mots\n"
-        "- actions: 1 à 3 éléments, max 14 mots\n"
-        "- risks: 1 à 3 éléments, max 14 mots\n"
-        "- tldr: 1 phrase, max 24 mots\n\n"
+        "Tu prépares une synthèse visuelle pour une extension Chrome affichée en panneau latéral.\n"
+        "Respect absolu: n'invente rien, n'infère pas des dates, chiffres, ratifications, causalités ou conclusions non explicites.\n"
+        "Si une information n'est pas clairement présente, reste général et indique implicitement la prudence dans les blocs annexes.\n"
+        "Retourne uniquement un JSON valide conforme au schéma.\n"
+        "Produit attendu: 2 à 3 lignes d'introduction, 3 à 6 points, 1 conclusion, 1 à 3 blocs annexes utiles.\n"
+        "Chaque item doit être très court, concret et lisible en interface.\n"
+        "Si analysis_strategy vaut overview, traite le texte comme une vue d'ensemble non exhaustive.\n\n"
         f"META:\n{json.dumps(meta, ensure_ascii=False)}\n\n"
         f"TEXTE:\n{text}"
     )
-
-
-def _strip_code_fences(content: str) -> str:
-    content = content.strip()
-    if content.startswith("```json"):
-        content = content[7:]
-    elif content.startswith("```"):
-        content = content[3:]
-    if content.endswith("```"):
-        content = content[:-3]
-    return content.strip()
-
-
-def _extract_json_object(content: str) -> str:
-    if not content:
-        return content
-    start = content.find("{")
-    end = content.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        return content[start:end + 1]
-    return content
-
-
-def _looks_grounded(source_text: str, summary_points: list[str], actions: list[str], risks: list[str], tldr: str) -> bool:
-    source = (source_text or "").lower()
-    generated = " ".join([*summary_points, *actions, *risks, tldr]).lower()
-    source_years = set(re.findall(r"\b(1[89]\d{2}|20\d{2})\b", source))
-    generated_years = set(re.findall(r"\b(1[89]\d{2}|20\d{2})\b", generated))
-    if generated_years - source_years:
-        return False
-    if "ratification" in generated and "ratification" not in source and "ratifi" not in source:
-        return False
-    if "obligatoire" in generated and "obligatoire" not in source and "contraignant" not in source:
-        return False
-    return True

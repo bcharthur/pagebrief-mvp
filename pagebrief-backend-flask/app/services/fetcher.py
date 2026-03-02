@@ -9,6 +9,9 @@ from pypdf import PdfReader
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
+_LINE_ONLY_DIGITS_RE = re.compile(r"^\d{1,4}$")
+_URL_ONLY_RE = re.compile(r"^(https?://|www\.)", flags=re.IGNORECASE)
+_PAGE_MARKER_RE = re.compile(r"^(page|p\.)\s+\d+(\s*/\s*\d+)?$", flags=re.IGNORECASE)
 
 
 def clean_text(value: str | None) -> str:
@@ -60,10 +63,31 @@ def extract_pdf_text_from_bytes(data: bytes) -> str:
             text = page.extract_text() or ""
         except Exception:
             text = ""
-        if text.strip():
-            chunks.append(text.strip())
+        cleaned = _clean_pdf_page(text)
+        if cleaned:
+            chunks.append(cleaned)
 
     merged = "\n".join(chunks).strip()
     if not merged:
         raise ValueError("Le PDF ne contient aucun texte exploitable.")
     return merged
+
+
+def _clean_pdf_page(text: str) -> str:
+    lines = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.replace("\xa0", " ").strip()
+        if not line:
+            continue
+        if _LINE_ONLY_DIGITS_RE.match(line):
+            continue
+        if _PAGE_MARKER_RE.match(line):
+            continue
+        if _URL_ONLY_RE.match(line) and len(line) < 120:
+            continue
+        if set(line) <= {"-", "_", "=", ".", "•"}:
+            continue
+        if len(line) <= 1:
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
