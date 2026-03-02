@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import re
-from urllib.parse import urlparse
+from pathlib import Path
+from urllib.parse import urlparse, unquote
+from urllib.request import url2pathname
 
 import httpx
 from pypdf import PdfReader
@@ -36,8 +38,13 @@ def is_probable_pdf_url(url: str) -> bool:
 
 def fetch_pdf_text_from_url(url: str, settings) -> str:
     parsed = urlparse(url)
+
+    if parsed.scheme == "file":
+        data = _read_pdf_bytes_from_file_url(url)
+        return extract_pdf_text_from_bytes(data)
+
     if parsed.scheme not in {"http", "https"}:
-        raise ValueError("L'URL du PDF doit commencer par http:// ou https://")
+        raise ValueError("L'URL du PDF doit commencer par http:// , https:// ou file:///")
 
     headers = {"User-Agent": settings.user_agent}
     with httpx.Client(timeout=settings.fetch_timeout_s, follow_redirects=True, headers=headers) as client:
@@ -49,6 +56,37 @@ def fetch_pdf_text_from_url(url: str, settings) -> str:
         data = response.content
 
     return extract_pdf_text_from_bytes(data)
+
+
+def _read_pdf_bytes_from_file_url(url: str) -> bytes:
+    parsed = urlparse(url)
+    if parsed.scheme != "file":
+        raise ValueError("URL de fichier invalide.")
+
+    # Convertit proprement file:///... en chemin local Windows/Linux
+    raw_path = url2pathname(unquote(parsed.path or ""))
+
+    # Cas UNC éventuel : file://server/share/file.pdf
+    if parsed.netloc and parsed.netloc not in {"", "localhost"}:
+        raw_path = f"//{parsed.netloc}{raw_path}"
+
+    # Sur Windows, file:///C:/... donne souvent /C:/... -> on enlève le slash de trop
+    if re.match(r"^/[A-Za-z]:", raw_path):
+        raw_path = raw_path[1:]
+
+    path = Path(raw_path)
+
+    if not path.exists():
+        raise ValueError(f"Le fichier local est introuvable : {path}")
+    if not path.is_file():
+        raise ValueError(f"Le chemin local n'est pas un fichier : {path}")
+    if path.suffix.lower() != ".pdf":
+        raise ValueError("Le fichier local doit être un PDF.")
+
+    try:
+        return path.read_bytes()
+    except Exception as exc:
+        raise ValueError(f"Impossible de lire le fichier local : {path}") from exc
 
 
 def extract_pdf_text_from_bytes(data: bytes) -> str:
