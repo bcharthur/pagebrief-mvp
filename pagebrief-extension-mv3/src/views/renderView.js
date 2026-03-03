@@ -1,4 +1,4 @@
-import { capitalize } from "../helpers.js";
+import { formatFormatLabel } from "../helpers.js";
 
 function createItemCard(text, isEmpty = false) {
   const item = document.createElement("div");
@@ -64,8 +64,8 @@ function renderAnnexBlocks(target, blocks) {
 }
 
 export function applyEmptyRender(dom, format = "express") {
-  dom.render.panelTitle.textContent = `Vue ${capitalize(format)}`;
-  dom.render.formatBadge.textContent = capitalize(format);
+  dom.render.panelTitle.textContent = `Vue ${formatFormatLabel(format)}`;
+  dom.render.formatBadge.textContent = formatFormatLabel(format);
   dom.render.introLabel.textContent = "Introduction";
   dom.render.pointsLabel.textContent = "Points clés";
   dom.render.conclusionLabel.textContent = "Conclusion";
@@ -81,8 +81,8 @@ export function applyEmptyRender(dom, format = "express") {
 export function renderResult(dom, result) {
   const sectionLabels = result.section_labels || {};
   dom.docTitle.textContent = result.document_title || result.title || result.panel_title || "Document analysé";
-  dom.render.panelTitle.textContent = result.panel_title || `Vue ${capitalize(result.format_label || result.view_format || "express")}`;
-  dom.render.formatBadge.textContent = capitalize(result.format_label || result.view_format || "express");
+  dom.render.panelTitle.textContent = result.panel_title || `Vue ${formatFormatLabel(result.view_format || "express")}`;
+  dom.render.formatBadge.textContent = result.format_label || formatFormatLabel(result.view_format || "express");
   dom.render.introLabel.textContent = sectionLabels.intro || "Introduction";
   dom.render.pointsLabel.textContent = sectionLabels.points || "Points clés";
   dom.render.conclusionLabel.textContent = sectionLabels.conclusion || "Conclusion";

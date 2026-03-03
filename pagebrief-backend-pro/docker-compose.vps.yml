@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    healthcheck:
+      test: [ "CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    volumes:
+      - storage_data:/app/storage
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    volumes:
+      - storage_data:/app/storage
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  redis_data:
+  ollama_data:
+  storage_data:

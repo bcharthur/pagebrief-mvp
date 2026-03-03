@@ -1,8 +1,10 @@
 const DEFAULTS = {
-  pagebrief_backend_url: "http://localhost:8000",
+  pagebrief_backend_url: "http://localhost",
   pagebrief_view_format: "express",
   pagebrief_scope: "document",
   pagebrief_active_view: "render",
+  pagebrief_auth_email: "",
+  pagebrief_auth_token: "",
 };
 
 const TAB_STATE_KEY = "pagebrief_tab_state";

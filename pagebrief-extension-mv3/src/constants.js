@@ -3,6 +3,8 @@ export const SETTINGS_KEYS = [
   "pagebrief_view_format",
   "pagebrief_scope",
   "pagebrief_active_view",
+  "pagebrief_auth_email",
+  "pagebrief_auth_token",
 ];
 
 export const TAB_STATE_KEY = "pagebrief_tab_state";
@@ -20,7 +22,7 @@ export const FORMAT_CONFIG = {
     summary: "Intro courte, points clés, conclusion. Parfait pour un scan rapide.",
     bestFor: "Articles, pages produit, PDF longs à situer rapidement.",
   },
-  analytic: {
+  analytique: {
     label: "Analytique",
     tagline: "Premium",
     plan: "premium",
@@ -36,7 +38,7 @@ export const FORMAT_CONFIG = {
     summary: "Contexte, actions, risques, flous et recommandation rapide.",
     bestFor: "CGU, propositions commerciales, documents internes, achats.",
   },
-  study: {
+  etude: {
     label: "Étude",
     tagline: "Premium",
     plan: "premium",

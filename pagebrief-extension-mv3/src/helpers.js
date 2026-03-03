@@ -1,3 +1,20 @@
+const FORMAT_LABELS = {
+  express: "Express",
+  analytique: "Analytique",
+  decision: "Décision",
+  etude: "Étude",
+};
+
+const CONFIDENCE_LABELS = {
+  faible: "Faible",
+  moyenne: "Moyenne",
+  elevee: "Élevée",
+  élevée: "Élevée",
+  high: "Élevée",
+  medium: "Moyenne",
+  low: "Faible",
+};
+
 export function normalizeUrl(value) {
   return String(value || "").replace(/#.*$/, "");
 }
@@ -5,6 +22,23 @@ export function normalizeUrl(value) {
 export function capitalize(value) {
   const text = String(value || "");
   return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : "";
+}
+
+export function formatFormatLabel(value) {
+  const key = String(value || "").toLowerCase();
+  return FORMAT_LABELS[key] || capitalize(key);
+}
+
+export function formatConfidence(value) {
+  const key = String(value || "").toLowerCase();
+  return CONFIDENCE_LABELS[key] || (key ? capitalize(key) : "-");
+}
+
+export function formatPlan(value) {
+  const key = String(value || "").toLowerCase();
+  if (key === "premium") return "Premium";
+  if (key === "free") return "Gratuit";
+  return key ? capitalize(key) : "-";
 }
 
 export function safeTrim(value, maxLength = 280) {
@@ -25,22 +59,6 @@ export function formatTimestamp(value) {
   } catch (_error) {
     return "";
   }
-}
-
-export function buildHistoryExplanation(result) {
-  const primary = result?.conclusion || result?.tldr || "";
-  if (String(primary).trim()) return safeTrim(primary, 240);
-  const fallback = [
-    ...(Array.isArray(result?.intro_lines) ? result.intro_lines : []),
-    ...(Array.isArray(result?.key_points) ? result.key_points.slice(0, 2) : []),
-  ].join(" ");
-  return safeTrim(fallback, 240) || "Aucune explication synthétique disponible.";
-}
-
-export function buildHistoryKey(url, scope = "document", focusHint = "") {
-  const normalized = normalizeUrl(url) || "page-sans-url";
-  if (scope !== "selection") return `${normalized}::${scope}`;
-  return `${normalized}::selection::${safeTrim(focusHint || "selection", 80)}`;
 }
 
 export function isTabStateStaleForUrl(tabState, currentUrl) {

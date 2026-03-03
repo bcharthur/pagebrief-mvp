@@ -1,27 +1,85 @@
-export async function sendToBackend(backendUrl, requestBody) {
-  const root = String(backendUrl || "").trim().replace(/\/$/, "");
-  if (!root) throw new Error("Renseigne une URL de backend.");
+class ApiError extends Error {
+  constructor(message, status = 0, data = null) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
+  }
+}
 
-  const response = await fetch(`${root}/v1/pagebrief/summarize`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestBody),
+function buildRoot(backendUrl) {
+  return String(backendUrl || "").trim().replace(/\/$/, "");
+}
+
+async function apiRequest(backendUrl, path, options = {}) {
+  const root = buildRoot(backendUrl);
+  if (!root) throw new ApiError("Renseigne une URL de backend.");
+
+  const headers = new Headers(options.headers || {});
+  if (options.token) {
+    headers.set("Authorization", `Bearer ${options.token}`);
+  }
+
+  const response = await fetch(`${root}${path}`, {
+    method: options.method || "GET",
+    headers,
+    body: options.body,
   });
 
   const raw = await response.text();
+  let data = null;
 
-  let data;
-  try {
-    data = raw ? JSON.parse(raw) : null;
-  } catch (_parseError) {
-    throw new Error(`Réponse backend illisible (HTTP ${response.status}).`);
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch (_error) {
+      data = raw;
+    }
   }
 
-  if (!response.ok || !data?.ok) {
-    throw new Error(data?.error || `Le backend a refusé l'analyse (HTTP ${response.status}).`);
+  if (!response.ok) {
+    const detail = data?.detail || data?.message || (typeof data === "string" ? data : "Requête refusée.");
+    throw new ApiError(detail || `Erreur HTTP ${response.status}.`, response.status, data);
   }
 
   return data;
+}
+
+export async function login(backendUrl, email, password) {
+  return apiRequest(backendUrl, "/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function register(backendUrl, email, password) {
+  return apiRequest(backendUrl, "/v1/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function fetchMe(backendUrl, token) {
+  return apiRequest(backendUrl, "/v1/me", { token });
+}
+
+export async function createAnalysisJob(backendUrl, token, payload) {
+  return apiRequest(backendUrl, "/v1/jobs", {
+    method: "POST",
+    token,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAnalysisJob(backendUrl, token, jobId) {
+  return apiRequest(backendUrl, `/v1/jobs/${encodeURIComponent(jobId)}`, { token });
+}
+
+export async function fetchHistory(backendUrl, token) {
+  return apiRequest(backendUrl, "/v1/history", { token });
 }
 
 export async function extractCurrentTab(tabId, preferSelection = false) {
@@ -72,3 +130,5 @@ export async function extractCurrentTab(tabId, preferSelection = false) {
 
   return result;
 }
+
+export { ApiError };

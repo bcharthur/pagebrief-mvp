@@ -62,6 +62,13 @@ export const dom = {
 
   settings: {
     backendUrl: document.getElementById("backendUrl"),
+    authEmail: document.getElementById("authEmail"),
+    authPassword: document.getElementById("authPassword"),
     saveSettingsBtn: document.getElementById("saveSettingsBtn"),
+    loginBtn: document.getElementById("loginBtn"),
+    registerBtn: document.getElementById("registerBtn"),
+    logoutBtn: document.getElementById("logoutBtn"),
+    authStateTitle: document.getElementById("authStateTitle"),
+    authStateText: document.getElementById("authStateText"),
   },
 };

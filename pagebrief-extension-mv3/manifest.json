@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PageBrief",
-  "version": "0.4.1",
-  "description": "Synthèse utile d'une page web dans un panneau latéral propre, par vues, avec historique de session.",
+  "version": "0.5.0",
+  "description": "Synthèse utile d'une page web dans un panneau latéral, désormais branché sur le backend pro asynchrone.",
   "action": {
     "default_title": "Ouvrir PageBrief"
   },

@@ -8,6 +8,13 @@ export const state = {
   historyItems: [],
   currentResult: null,
   lastRequestPayload: null,
-  progressTimer: null,
   progressStartedAt: 0,
+  authToken: "",
+  currentUser: null,
+  progressReal: 0,
+  progressVisual: 0,
+  progressTarget: 0,
+  progressLabel: "",
+  progressTimer: null,
+
 };

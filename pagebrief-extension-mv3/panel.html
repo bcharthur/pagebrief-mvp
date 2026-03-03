@@ -47,7 +47,7 @@
         </nav>
 
         <div class="drawer-actions spaced-actions">
-          <button id="clearHistoryBtn" class="secondary danger" type="button">Vider l'historique de session</button>
+          <button id="clearHistoryBtn" class="secondary" type="button">Actualiser l'historique</button>
         </div>
       </div>
     </aside>
@@ -130,7 +130,7 @@
               <span class="seg-top"><span>Express</span><span class="plan-badge free">Gratuit</span><span class="info-dot" title="Vue la plus rapide : idéale pour situer un document.">i</span></span>
               <span class="seg-sub">Intro + points + conclusion</span>
             </button>
-            <button type="button" class="seg" data-format="analytic" title="Pour comprendre la structure et les idées fortes.">
+            <button type="button" class="seg" data-format="analytique" title="Pour comprendre la structure et les idées fortes.">
               <span class="seg-top"><span>Analytique</span><span class="plan-badge premium">Premium</span><span class="info-dot" title="Pour comprendre la structure et les idées fortes.">i</span></span>
               <span class="seg-sub">Structure, repères, éléments marquants</span>
             </button>
@@ -138,7 +138,7 @@
               <span class="seg-top"><span>Décision</span><span class="plan-badge premium">Premium</span><span class="info-dot" title="Pour décider vite : actions, risques et zones floues.">i</span></span>
               <span class="seg-sub">Actions, risques, flous, recommandation</span>
             </button>
-            <button type="button" class="seg" data-format="study" title="Pour apprendre : définitions, notions et repères.">
+            <button type="button" class="seg" data-format="etude" title="Pour apprendre : définitions, notions et repères.">
               <span class="seg-top"><span>Étude</span><span class="plan-badge premium">Premium</span><span class="info-dot" title="Pour apprendre : définitions, notions et repères.">i</span></span>
               <span class="seg-sub">Définitions, notions, repères</span>
             </button>
@@ -173,12 +173,12 @@
         <div class="section-card">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Session</p>
+              <p class="eyebrow">Compte</p>
               <h2>Historique</h2>
             </div>
             <span id="historyCountBadge" class="soft-pill">0</span>
           </div>
-          <p id="historyMeta" class="subtle-text">Aucun document enregistré.</p>
+          <p id="historyMeta" class="subtle-text">Connecte-toi pour charger l'historique serveur.</p>
           <input id="historySearch" class="text-field" type="search" placeholder="Rechercher un document ou une URL" />
           <div id="historyList" class="history-list"></div>
         </div>
@@ -189,14 +189,32 @@
           <div class="section-head">
             <div>
               <p class="eyebrow">Réglages</p>
-              <h2>Paramètres légers</h2>
+              <h2>Connexion au backend pro</h2>
             </div>
           </div>
 
           <label class="label-block" for="backendUrl">Backend URL</label>
-          <input id="backendUrl" class="text-field" type="text" value="http://localhost:8000" />
-          <button id="saveSettingsBtn" class="primary soft" type="button">Enregistrer</button>
-          <p class="subtle-text">Astuce : active aussi “Autoriser l’accès aux URL de fichiers” dans chrome://extensions pour analyser des PDF locaux.</p>
+          <input id="backendUrl" class="text-field" type="text" value="http://localhost" />
+
+          <label class="label-block" for="authEmail">Email</label>
+          <input id="authEmail" class="text-field" type="email" placeholder="toi@exemple.com" />
+
+          <label class="label-block" for="authPassword">Mot de passe</label>
+          <input id="authPassword" class="text-field" type="password" placeholder="Mot de passe" />
+
+          <div class="settings-actions-grid">
+            <button id="saveSettingsBtn" class="secondary" type="button">Enregistrer</button>
+            <button id="loginBtn" class="primary" type="button">Se connecter</button>
+            <button id="registerBtn" class="secondary" type="button">Créer le compte</button>
+            <button id="logoutBtn" class="secondary danger" type="button">Se déconnecter</button>
+          </div>
+
+          <div class="hint-card compact-top">
+            <strong id="authStateTitle">Session</strong>
+            <p id="authStateText">Aucune session active.</p>
+          </div>
+
+          <p class="subtle-text">Astuce : avec le backend Docker pro, l'adresse par défaut est généralement <strong>http://localhost</strong>. Active aussi “Autoriser l’accès aux URL de fichiers” dans chrome://extensions pour analyser des PDF locaux.</p>
         </div>
       </section>
     </main>

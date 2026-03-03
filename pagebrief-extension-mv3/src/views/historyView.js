@@ -1,4 +1,4 @@
-import { capitalize, formatTimestamp, safeTrim } from "../helpers.js";
+import { formatFormatLabel, formatTimestamp, safeTrim } from "../helpers.js";
 
 function buildEntry(entry, handlers) {
   const article = document.createElement("article");
@@ -10,17 +10,17 @@ function buildEntry(entry, handlers) {
   const left = document.createElement("div");
   const title = document.createElement("div");
   title.className = "history-title";
-  title.textContent = safeTrim(entry.title || entry.result?.panel_title || entry.url || "Document analysé", 90);
+  title.textContent = safeTrim(entry.title || entry.source_url || "Document analysé", 90);
   left.appendChild(title);
 
   const meta = document.createElement("div");
   meta.className = "history-meta";
   const formatChip = document.createElement("span");
   formatChip.className = "history-chip";
-  formatChip.textContent = entry.formatLabel || capitalize(entry.result?.format_label || entry.format || "express");
+  formatChip.textContent = formatFormatLabel(entry.format || "express");
   const sourceChip = document.createElement("span");
   sourceChip.className = "history-chip";
-  sourceChip.textContent = String(entry.sourceKind || entry.result?.source_kind || "page").toUpperCase();
+  sourceChip.textContent = String(entry.source_type || "page").toUpperCase();
   meta.appendChild(formatChip);
   meta.appendChild(sourceChip);
   left.appendChild(meta);
@@ -28,23 +28,23 @@ function buildEntry(entry, handlers) {
 
   const time = document.createElement("div");
   time.className = "history-time";
-  time.textContent = formatTimestamp(entry.savedAt);
+  time.textContent = formatTimestamp(entry.created_at);
   head.appendChild(time);
   article.appendChild(head);
 
   const body = document.createElement("p");
   body.className = "history-body";
-  body.textContent = entry.explanation || "Aucune explication disponible.";
+  body.textContent = entry.summary_excerpt || "Aucun extrait disponible.";
   article.appendChild(body);
 
   const link = document.createElement("a");
   link.className = "history-url";
-  link.href = entry.url || "#";
-  link.textContent = entry.url || "Aucune URL";
-  link.title = entry.url || "Aucune URL";
+  link.href = entry.source_url || "#";
+  link.textContent = entry.source_url || "Aucune URL";
+  link.title = entry.source_url || "Aucune URL";
   link.addEventListener("click", async (event) => {
     event.preventDefault();
-    await handlers.onOpen(entry.url, true);
+    await handlers.onOpen(entry.source_url, true);
   });
   article.appendChild(link);
 
@@ -54,13 +54,14 @@ function buildEntry(entry, handlers) {
   const previewBtn = document.createElement("button");
   previewBtn.type = "button";
   previewBtn.textContent = "Charger";
+  previewBtn.disabled = !entry.job_id;
   previewBtn.addEventListener("click", () => handlers.onPreview(entry));
 
   const openBtn = document.createElement("button");
   openBtn.type = "button";
   openBtn.textContent = "Ouvrir";
-  openBtn.disabled = !entry.url;
-  openBtn.addEventListener("click", () => handlers.onOpen(entry.url, false));
+  openBtn.disabled = !entry.source_url;
+  openBtn.addEventListener("click", () => handlers.onOpen(entry.source_url, false));
 
   actions.appendChild(previewBtn);
   actions.appendChild(openBtn);
@@ -69,25 +70,36 @@ function buildEntry(entry, handlers) {
   return article;
 }
 
-export function renderHistory(dom, entries, handlers, search = "") {
+export function renderHistory(dom, entries, handlers, search = "", options = {}) {
   const term = String(search || "").toLowerCase().trim();
+  const authenticated = Boolean(options.authenticated);
   const filtered = !term
     ? entries
     : entries.filter((entry) => {
-      const hay = [entry.title, entry.url, entry.explanation, entry.formatLabel].join(" ").toLowerCase();
+      const hay = [entry.title, entry.source_url, entry.summary_excerpt, entry.format].join(" ").toLowerCase();
       return hay.includes(term);
     });
 
   dom.history.historyCountBadge.textContent = String(entries.length);
-  dom.history.historyMeta.textContent = `Historique de session : ${entries.length} document${entries.length > 1 ? "s" : ""}.`;
+  dom.history.historyMeta.textContent = authenticated
+    ? `Historique serveur : ${entries.length} document${entries.length > 1 ? "s" : ""}.`
+    : "Connecte-toi pour charger l'historique serveur.";
   dom.history.historyList.innerHTML = "";
+
+  if (!authenticated) {
+    const empty = document.createElement("div");
+    empty.className = "item-card empty";
+    empty.textContent = "Aucune session connectée. Va dans Réglages pour te connecter au backend pro.";
+    dom.history.historyList.appendChild(empty);
+    return;
+  }
 
   if (!filtered.length) {
     const empty = document.createElement("div");
     empty.className = "item-card empty";
     empty.textContent = term
       ? "Aucun élément ne correspond à cette recherche."
-      : "Aucun document enregistré dans cette session pour l'instant.";
+      : "Aucun document enregistré côté serveur pour l'instant.";
     dom.history.historyList.appendChild(empty);
     return;
   }
