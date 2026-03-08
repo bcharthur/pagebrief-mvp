@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PageBrief</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <p class="eyebrow">PageBrief</p>
+        <strong class="brand-title">Lecture instantanée</strong>
+      </div>
+
+      <div class="top-actions">
+        <button id="openHistoryBtn" class="ghost-btn" type="button" aria-label="Ouvrir l'historique">Historique</button>
+        <button id="openAccountBtn" class="ghost-btn" type="button" aria-label="Ouvrir le compte">Compte</button>
+      </div>
+    </header>
+
+    <main class="main-stage">
+      <section class="hero-card">
+        <div class="hero-head">
+          <div class="hero-copy">
+            <p class="eyebrow">Document actif</p>
+            <h1 id="docTitle">Aucune analyse chargée</h1>
+            <p id="currentTargetMeta" class="hero-url">Aucune URL détectée.</p>
+          </div>
+
+          <div class="hero-side">
+            <span id="sourceBadge" class="source-badge">PAGE</span>
+            <span id="sessionPill" class="session-pill">Hors ligne</span>
+          </div>
+        </div>
+
+        <div class="summary-strip">
+          <span class="summary-pill">
+            <strong id="readingTime">-</strong>
+            <em>Lecture</em>
+          </span>
+          <span class="summary-pill">
+            <strong id="confidencePill">-</strong>
+            <em>Confiance</em>
+          </span>
+        </div>
+
+        <div class="status-card">
+          <div class="status-row">
+            <div id="statusBar" class="status-bar">Prêt.</div>
+            <span id="statusPercent" class="status-percent">0%</span>
+          </div>
+          <div id="statusProgressWrap" class="status-progress hidden" aria-hidden="true">
+            <span id="statusProgressFill" class="status-progress-fill"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="compose-card">
+        <div class="section-top">
+          <div>
+            <p class="eyebrow">Action rapide</p>
+            <h2>Choisis le type de résumé puis lance l’analyse</h2>
+          </div>
+          <select id="scopeSelect" class="scope-select" aria-label="Portée de l'analyse">
+            <option value="document">Document complet</option>
+            <option value="selection">Sélection</option>
+          </select>
+        </div>
+
+        <div id="formatTabs" class="format-grid">
+          <button type="button" class="seg active" data-format="express" title="Vue la plus rapide : idéale pour situer un document.">
+            <span class="seg-top"><span>Express</span><span class="plan-badge free">Gratuit</span></span>
+            <span class="seg-sub">Intro + points + conclusion</span>
+          </button>
+          <button type="button" class="seg" data-format="analytique" title="Pour comprendre la structure et les idées fortes.">
+            <span class="seg-top"><span>Analytique</span><span class="plan-badge premium">Premium</span></span>
+            <span class="seg-sub">Structure, repères, éléments marquants</span>
+          </button>
+          <button type="button" class="seg" data-format="decision" title="Pour décider vite : actions, risques et zones floues.">
+            <span class="seg-top"><span>Décision</span><span class="plan-badge premium">Premium</span></span>
+            <span class="seg-sub">Actions, risques, flous, recommandation</span>
+          </button>
+          <button type="button" class="seg" data-format="etude" title="Pour apprendre : définitions, notions et repères.">
+            <span class="seg-top"><span>Étude</span><span class="plan-badge premium">Premium</span></span>
+            <span class="seg-sub">Définitions, notions, repères</span>
+          </button>
+        </div>
+
+        <div class="hint-grid">
+          <div class="hint-card highlight-card">
+            <strong id="formatGuideTitle">Express · Gratuit</strong>
+            <p id="formatGuideSummary">Intro courte, points clés, conclusion. Parfait pour un scan rapide.</p>
+            <p id="formatGuideBestFor">Idéal pour : articles, pages produit, PDF longs à situer rapidement.</p>
+          </div>
+
+          <div class="hint-card">
+            <strong id="selectionStateTitle">Sélection</strong>
+            <p id="selectionStateText">Aucun passage capturé pour le moment.</p>
+          </div>
+        </div>
+
+        <div class="cta-stack compact-gap">
+          <button id="inspectBtn" class="primary" type="button">Analyser maintenant</button>
+          <div class="secondary-actions">
+            <button id="pickBtn" class="secondary" type="button">Cibler un passage</button>
+            <button id="analyzeSelectionBtn" class="secondary" type="button" disabled>Analyser la sélection</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="result-card">
+        <div class="result-head">
+          <div>
+            <p class="eyebrow">Résultat</p>
+            <h2 id="panelTitle">Vue Express</h2>
+          </div>
+          <span id="formatBadge" class="soft-pill">Express</span>
+        </div>
+
+        <p id="analysisBasis" class="hero-text">Aucune analyse chargée.</p>
+        <p id="sourceNote" class="hero-note">Lance une analyse en un clic depuis le bloc ci-dessus.</p>
+
+        <section class="accordion-card">
+          <button class="accordion-trigger" type="button" data-accordion-target="introPanel" aria-expanded="true">
+            <span id="introLabel">Introduction</span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div id="introPanel" class="accordion-panel open">
+            <div id="intro" class="stack-list"></div>
+          </div>
+        </section>
+
+        <section class="accordion-card">
+          <button class="accordion-trigger" type="button" data-accordion-target="pointsPanel" aria-expanded="true">
+            <span id="pointsLabel">Points clés</span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div id="pointsPanel" class="accordion-panel open">
+            <div id="keyPoints" class="stack-list"></div>
+          </div>
+        </section>
+
+        <section class="accordion-card">
+          <button class="accordion-trigger" type="button" data-accordion-target="conclusionPanel" aria-expanded="true">
+            <span id="conclusionLabel">Conclusion</span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div id="conclusionPanel" class="accordion-panel open">
+            <p id="conclusion" class="conclusion-text">En attente d'une première analyse.</p>
+          </div>
+        </section>
+
+        <section class="accordion-card">
+          <button class="accordion-trigger" type="button" data-accordion-target="annexPanel" aria-expanded="false">
+            <span id="annexLabel">Blocs utiles</span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div id="annexPanel" class="accordion-panel">
+            <div id="annexBlocks" class="annex-list"></div>
+          </div>
+        </section>
+
+        <footer class="footer-actions footer-inline">
+          <button id="copyBtn" class="secondary" type="button">Copier</button>
+          <button id="refreshBtn" class="primary soft" type="button">Ré-analyser</button>
+        </footer>
+      </section>
+    </main>
+  </div>
+
+  <div id="modalOverlay" class="modal-overlay hidden" aria-hidden="true">
+    <section id="historyModal" class="modal-panel hidden" aria-hidden="true">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Compte</p>
+          <h2>Historique</h2>
+        </div>
+        <button id="closeHistoryModalBtn" class="ghost-btn icon-only" type="button" aria-label="Fermer l'historique">✕</button>
+      </div>
+
+      <p id="historyMeta" class="subtle-text">Connecte-toi pour charger l'historique serveur.</p>
+      <div class="modal-toolbar">
+        <input id="historySearch" class="text-field" type="search" placeholder="Rechercher un document ou une URL" />
+        <button id="clearHistoryBtn" class="secondary small" type="button">Actualiser</button>
+      </div>
+      <div class="history-badge-row">
+        <span id="historyCountBadge" class="soft-pill">0</span>
+      </div>
+      <div id="historyList" class="history-list"></div>
+    </section>
+
+    <section id="accountModal" class="modal-panel hidden" aria-hidden="true">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Compte</p>
+          <h2>Connexion & backend</h2>
+        </div>
+        <button id="closeAccountModalBtn" class="ghost-btn icon-only" type="button" aria-label="Fermer le compte">✕</button>
+      </div>
+
+      <div class="hint-card compact-top">
+        <strong id="authStateTitle">Session</strong>
+        <p id="authStateText">Aucune session active.</p>
+      </div>
+
+      <label class="label-block" for="backendUrl">Backend URL</label>
+      <input id="backendUrl" class="text-field" type="text" value="http://localhost" />
+
+      <label class="label-block" for="authEmail">Email</label>
+      <input id="authEmail" class="text-field" type="email" placeholder="toi@exemple.com" />
+
+      <label class="label-block" for="authPassword">Mot de passe</label>
+      <input id="authPassword" class="text-field" type="password" placeholder="Mot de passe" />
+
+      <div class="settings-actions-grid">
+        <button id="saveSettingsBtn" class="secondary" type="button">Enregistrer</button>
+        <button id="loginBtn" class="primary" type="button">Se connecter</button>
+        <button id="registerBtn" class="secondary" type="button">Créer un compte</button>
+        <button id="logoutBtn" class="secondary danger" type="button">Se déconnecter</button>
+      </div>
+
+      <p class="subtle-text">
+        Astuce : si tu analyses un PDF local <strong>file://</strong>, active “Autoriser l’accès aux URL de fichiers” dans
+        <strong>chrome://extensions</strong>. Le backend par défaut est souvent <strong>http://localhost</strong>.
+      </p>
+    </section>
+  </div>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>
