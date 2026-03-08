@@ -1,13 +1,26 @@
-import { SETTINGS_KEYS, VIEW_IDS } from "./src/constants.js";
+import { SETTINGS_KEYS } from "./src/constants.js";
 import { state } from "./src/state.js";
 import { dom } from "./src/dom.js";
 import { getActiveTab, getTabState, patchTabState } from "./src/tabState.js";
-import { ApiError, createAnalysisJob, extractCurrentTab, fetchHistory, fetchMe, getAnalysisJob, login, register } from "./src/api.js";
+import {
+  ApiError,
+  createAnalysisJob,
+  extractCurrentTab,
+  fetchHistory,
+  fetchMe,
+  getAnalysisJob,
+  login,
+  register,
+  uploadPdfFile,
+} from "./src/api.js";
 import { formatConfidence, formatFormatLabel, formatPlan } from "./src/helpers.js";
 import { applyEmptyRender, renderResult, buildPlainText } from "./src/views/renderView.js";
 import { setActiveFormat, setLoading, renderSelectionState, renderActiveTarget } from "./src/views/analyzeView.js";
 import { renderHistory } from "./src/views/historyView.js";
 import { renderSettings } from "./src/views/settingsView.js";
+
+const PROGRESS_TIMEOUT_MS = 300000;
+const PROGRESS_TICK_MS = 90;
 
 init().catch((error) => {
   console.error("[PageBrief panel] init error", error);
@@ -22,39 +35,20 @@ async function init() {
   state.authToken = stored.pagebrief_auth_token || "";
   state.currentFormat = stored.pagebrief_view_format || "express";
   dom.analyze.scopeSelect.value = stored.pagebrief_scope || "document";
-  state.activeView = VIEW_IDS.includes(stored.pagebrief_active_view) ? stored.pagebrief_active_view : "render";
 
-  setActiveFormat(dom, state.currentFormat);
-  setActiveView(state.activeView, false);
   wireEvents();
-
   applyEmptyRender(dom, state.currentFormat);
-  updateSummaryMeta();
+  setActiveFormat(dom, state.currentFormat);
+  updateSummaryMeta({});
   renderSettingsPanel();
   renderHistoryPanel(false);
+  updateSessionPill();
 
   await syncAuthSession();
   await syncForActiveTab();
 }
 
 function wireEvents() {
-  dom.menuToggle.addEventListener("click", () => toggleDrawer(true));
-  dom.closeDrawerBtn.addEventListener("click", () => toggleDrawer(false));
-  dom.menuDrawer.addEventListener("click", (event) => {
-    if (event.target === dom.menuDrawer) toggleDrawer(false);
-  });
-
-  dom.navItems.forEach((button) => {
-    button.addEventListener("click", async () => {
-      setActiveView(button.dataset.viewTarget || "render", true);
-      toggleDrawer(false);
-      await persistSettings();
-      if ((button.dataset.viewTarget || "") === "history") {
-        await refreshHistoryPanel(false);
-      }
-    });
-  });
-
   dom.accordionTriggers.forEach((button) => {
     button.addEventListener("click", () => toggleAccordion(button));
   });
@@ -78,6 +72,15 @@ function wireEvents() {
   dom.render.copyBtn.addEventListener("click", handleCopyClick);
   dom.render.refreshBtn.addEventListener("click", handleRefreshClick);
 
+  dom.openHistoryBtn.addEventListener("click", handleOpenHistoryClick);
+  dom.openAccountBtn.addEventListener("click", () => openModal("account"));
+
+  dom.modals.closeHistoryBtn.addEventListener("click", closeModal);
+  dom.modals.closeAccountBtn.addEventListener("click", closeModal);
+  dom.modals.overlay.addEventListener("click", (event) => {
+    if (event.target === dom.modals.overlay) closeModal();
+  });
+
   dom.settings.saveSettingsBtn.addEventListener("click", async () => {
     await persistSettings();
     setStatus("Paramètres enregistrés.", "ok");
@@ -87,11 +90,15 @@ function wireEvents() {
   dom.settings.logoutBtn.addEventListener("click", handleLogoutClick);
   dom.settings.backendUrl.addEventListener("change", persistSettings);
   dom.settings.authEmail.addEventListener("change", persistSettings);
+  dom.settings.authPassword.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleLoginClick(false).catch(console.warn);
+    }
+  });
 
   dom.history.clearHistoryBtn.addEventListener("click", () => refreshHistoryPanel(true));
-  dom.history.historySearch.addEventListener("input", () => {
-    renderHistoryPanel(false);
-  });
+  dom.history.historySearch.addEventListener("input", () => renderHistoryPanel(Boolean(state.authToken && state.currentUser)));
 
   chrome.tabs.onActivated.addListener(() => {
     syncForActiveTab().catch(console.warn);
@@ -105,31 +112,24 @@ function wireEvents() {
   });
 
   chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === "pagebrief_tab_state_updated" && typeof message.tabId === "number" && message.tabId === state.activeTabId) {
+    if (
+      message?.type === "pagebrief_tab_state_updated" &&
+      typeof message.tabId === "number" &&
+      message.tabId === state.activeTabId
+    ) {
       syncForActiveTab().catch(console.warn);
     }
   });
 }
 
-function toggleDrawer(open) {
-  dom.menuDrawer.classList.toggle("hidden", !open);
-  dom.menuDrawer.setAttribute("aria-hidden", open ? "false" : "true");
-}
-
-function setActiveView(viewName, focusRenderTop = false) {
-  state.activeView = VIEW_IDS.includes(viewName) ? viewName : "render";
-
-  for (const [name, element] of Object.entries(dom.views)) {
-    element.classList.toggle("hidden", name !== state.activeView);
-  }
-
-  dom.navItems.forEach((button) => {
-    button.classList.toggle("active", button.dataset.viewTarget === state.activeView);
+async function persistSettings() {
+  await chrome.storage.local.set({
+    pagebrief_backend_url: dom.settings.backendUrl.value.trim(),
+    pagebrief_view_format: state.currentFormat,
+    pagebrief_scope: dom.analyze.scopeSelect.value,
+    pagebrief_auth_email: dom.settings.authEmail.value.trim(),
+    pagebrief_auth_token: state.authToken || "",
   });
-
-  if (focusRenderTop) {
-    document.querySelector(".view-stage")?.scrollTo({ top: 0, behavior: "smooth" });
-  }
 }
 
 function toggleAccordion(button) {
@@ -141,15 +141,29 @@ function toggleAccordion(button) {
   button.setAttribute("aria-expanded", open ? "true" : "false");
 }
 
-async function persistSettings() {
-  await chrome.storage.local.set({
-    pagebrief_backend_url: dom.settings.backendUrl.value.trim(),
-    pagebrief_view_format: state.currentFormat,
-    pagebrief_scope: dom.analyze.scopeSelect.value,
-    pagebrief_active_view: state.activeView,
-    pagebrief_auth_email: dom.settings.authEmail.value.trim(),
-    pagebrief_auth_token: state.authToken || "",
+function openModal(name) {
+  const valid = name === "history" || name === "account";
+  if (!valid) return;
+
+  state.activeModal = name;
+  dom.modals.overlay.classList.remove("hidden");
+  dom.modals.overlay.setAttribute("aria-hidden", "false");
+
+  Object.entries({ history: dom.modals.history, account: dom.modals.account }).forEach(([key, element]) => {
+    const open = key === name;
+    element.classList.toggle("hidden", !open);
+    element.setAttribute("aria-hidden", open ? "false" : "true");
   });
+}
+
+function closeModal() {
+  state.activeModal = "";
+  dom.modals.overlay.classList.add("hidden");
+  dom.modals.overlay.setAttribute("aria-hidden", "true");
+  dom.modals.history.classList.add("hidden");
+  dom.modals.account.classList.add("hidden");
+  dom.modals.history.setAttribute("aria-hidden", "true");
+  dom.modals.account.setAttribute("aria-hidden", "true");
 }
 
 function setStatus(message, type = "") {
@@ -157,122 +171,108 @@ function setStatus(message, type = "") {
   dom.statusBar.className = `status-bar ${type}`.trim();
 }
 
-function clampPercent(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
-}
-
-function getSoftProgressTarget(realProgress) {
-  const p = clampPercent(realProgress);
-
-  if (p >= 100) return 100;
-  if (p >= 90) return 97;
-  if (p >= 60) return 92;
-  if (p >= 45) return 82;
-  if (p >= 20) return 38;
-  if (p >= 5) return 14;
-  return 8;
-}
-
-function stopProgressLoop() {
+function stopProgressAnimation() {
   if (state.progressTimer) {
     window.clearInterval(state.progressTimer);
     state.progressTimer = null;
   }
 }
 
-function paintProgress(labelOverride = "") {
-  const label = labelOverride || state.progressLabel || "Analyse en cours";
-  const elapsed = Math.max(0, Date.now() - (state.progressStartedAt || Date.now()));
-  const seconds = Math.max(1, Math.floor(elapsed / 1000));
-
-  const visible = clampPercent(
-    Math.max(
-      state.progressReal || 0,
-      state.progressVisual || 0
-    )
-  );
-
-  dom.statusProgressWrap.classList.remove("hidden");
-  dom.statusProgressWrap.setAttribute("aria-hidden", "false");
-  dom.statusProgressFill.style.width = `${visible}%`;
-
-  setStatus(`${label} • ${seconds}s • ${visible}%`, "warn");
+function renderProgress() {
+  const safe = Math.max(0, Math.min(100, Math.round(state.progressVisual || 0)));
+  dom.statusProgressFill.style.width = `${safe}%`;
+  dom.statusPercent.textContent = `${safe}%`;
 }
 
-function ensureProgressLoop() {
+function startProgressAnimation() {
   if (state.progressTimer) return;
 
   state.progressTimer = window.setInterval(() => {
-    const visual = clampPercent(state.progressVisual || 0);
-    const target = clampPercent(state.progressTarget || 0);
-
-    if (visual < target) {
-      const gap = target - visual;
-      const step = gap >= 20 ? 2 : 1;
-      state.progressVisual = Math.min(target, visual + step);
-      paintProgress();
+    const delta = state.progressTarget - state.progressVisual;
+    if (Math.abs(delta) < 0.35) {
+      state.progressVisual = state.progressTarget;
+      renderProgress();
+      if (state.progressVisual >= 100 || state.progressVisual === state.progressTarget) {
+        if (state.progressVisual >= 100) stopProgressAnimation();
+      }
+      return;
     }
-  }, 180);
+
+    const step = Math.max(0.6, Math.abs(delta) * 0.18);
+    state.progressVisual += delta > 0 ? step : -step;
+    renderProgress();
+  }, PROGRESS_TICK_MS);
+}
+
+function computeVisualTarget(progress) {
+  const real = Math.max(0, Math.min(100, Number(progress) || 0));
+  const elapsed = state.progressStartedAt ? Date.now() - state.progressStartedAt : 0;
+  let target = real;
+
+  if (real >= 20 && real < 45) {
+    target = Math.min(43, Math.max(real, real + Math.floor(elapsed / 5000)));
+  } else if (real >= 45 && real < 90) {
+    target = Math.min(88, Math.max(real, real + Math.floor(elapsed / 4500)));
+  } else if (real >= 90 && real < 100) {
+    target = Math.min(97, Math.max(real, real + Math.floor(elapsed / 6000)));
+  }
+
+  return Math.max(state.progressVisual || 0, target);
 }
 
 function showProgress(progress = 0, label = "Analyse en cours") {
-  const real = clampPercent(progress);
-
   if (!state.progressStartedAt) {
     state.progressStartedAt = Date.now();
     state.progressVisual = 0;
-    state.progressTarget = 0;
     state.progressReal = 0;
+    state.progressTarget = 0;
   }
 
-  state.progressLabel = label;
-  state.progressReal = Math.max(clampPercent(state.progressReal || 0), real);
+  state.progressReal = Math.max(0, Math.min(100, Number(progress) || 0));
+  state.progressTarget = computeVisualTarget(state.progressReal);
 
-  // Cible visuelle "douce" pour éviter une barre figée pendant Ollama
-  const softTarget = getSoftProgressTarget(real);
-  state.progressTarget = Math.max(
-    clampPercent(state.progressTarget || 0),
-    softTarget
-  );
-
-  // Ne jamais afficher moins que le vrai progrès backend
-  state.progressVisual = Math.max(
-    clampPercent(state.progressVisual || 0),
-    state.progressReal
-  );
-
-  ensureProgressLoop();
-  paintProgress(label);
+  const seconds = Math.max(1, Math.floor((Date.now() - state.progressStartedAt) / 1000));
+  dom.statusProgressWrap.classList.remove("hidden");
+  dom.statusProgressWrap.setAttribute("aria-hidden", "false");
+  setStatus(`${label} • ${seconds}s`, "warn");
+  startProgressAnimation();
+  renderProgress();
 }
 
 function hideProgress(finalMessage = "", type = "") {
-  stopProgressLoop();
-
-  state.progressReal = 100;
-  state.progressTarget = 100;
-  state.progressVisual = 100;
-
-  dom.statusProgressWrap.classList.remove("hidden");
-  dom.statusProgressWrap.setAttribute("aria-hidden", "false");
-  dom.statusProgressFill.style.width = "100%";
-
-  if (finalMessage) {
-    setStatus(finalMessage, type);
-  }
-
-  window.setTimeout(() => {
+  if (!state.progressStartedAt) {
+    stopProgressAnimation();
     dom.statusProgressWrap.classList.add("hidden");
     dom.statusProgressWrap.setAttribute("aria-hidden", "true");
     dom.statusProgressFill.style.width = "0%";
+    dom.statusPercent.textContent = "0%";
+    if (finalMessage) setStatus(finalMessage, type);
+    return;
+  }
 
+  state.progressTarget = 100;
+  startProgressAnimation();
+
+  window.setTimeout(() => {
+    state.progressVisual = 100;
+    renderProgress();
+    stopProgressAnimation();
     state.progressStartedAt = 0;
     state.progressReal = 0;
     state.progressTarget = 0;
-    state.progressVisual = 0;
-    state.progressLabel = "";
-  }, finalMessage ? 500 : 0);
+
+    if (finalMessage) {
+      setStatus(finalMessage, type);
+    }
+
+    window.setTimeout(() => {
+      dom.statusProgressWrap.classList.add("hidden");
+      dom.statusProgressWrap.setAttribute("aria-hidden", "true");
+      dom.statusProgressFill.style.width = "0%";
+      dom.statusPercent.textContent = "0%";
+      state.progressVisual = 0;
+    }, finalMessage ? 450 : 0);
+  }, 220);
 }
 
 function updateSummaryMeta(meta = {}) {
@@ -280,13 +280,32 @@ function updateSummaryMeta(meta = {}) {
     const source = String(meta.sourceKind || "page").toUpperCase();
     dom.sourceBadge.textContent = source === "HTML" ? "PAGE" : source;
   }
-  if (typeof meta.readingTime !== "undefined") dom.readingTime.textContent = meta.readingTime ? `${meta.readingTime} min` : "-";
-  if (typeof meta.confidence !== "undefined") dom.confidencePill.textContent = meta.confidence || "-";
+  if (typeof meta.readingTime !== "undefined") {
+    dom.readingTime.textContent = meta.readingTime ? `${meta.readingTime} min` : "-";
+  }
+  if (typeof meta.confidence !== "undefined") {
+    dom.confidencePill.textContent = meta.confidence || "-";
+  }
+}
+
+function updateSessionPill() {
+  const connected = Boolean(state.authToken && state.currentUser);
+  dom.sessionPill.classList.remove("connected", "warning");
+
+  if (connected) {
+    dom.sessionPill.textContent = formatPlan(state.currentUser?.plan || "free");
+    dom.sessionPill.classList.add("connected");
+    return;
+  }
+
+  dom.sessionPill.textContent = "Connexion requise";
+  dom.sessionPill.classList.add("warning");
 }
 
 function normalizeResultFromJob(job, sourceHint = "") {
   const payload = job?.result || {};
   const format = job?.format || state.currentFormat || "express";
+
   return {
     ...payload,
     title: payload.title || job?.title || state.activeTabTitle || "Document analysé",
@@ -321,9 +340,11 @@ function applyResultToUi(result) {
 function applyEmptyState(message) {
   state.currentResult = null;
   applyEmptyRender(dom, state.currentFormat);
+
   if (state.activeTabTitle) {
     dom.docTitle.textContent = state.activeTabTitle;
   }
+
   updateSummaryMeta({
     sourceKind: /\.pdf($|\?)/i.test(state.activeTabUrl) ? "pdf" : "html",
     readingTime: null,
@@ -339,6 +360,7 @@ function clearSession(keepEmail = true) {
   if (!keepEmail) {
     dom.settings.authEmail.value = "";
   }
+  updateSessionPill();
 }
 
 function renderSettingsPanel() {
@@ -348,10 +370,13 @@ function renderSettingsPanel() {
     connected: Boolean(state.authToken && state.currentUser),
     user: state.currentUser,
   });
+  updateSessionPill();
 }
 
 function renderHistoryPanel(authenticated) {
-  renderHistory(dom, state.historyItems, historyHandlers(), dom.history.historySearch.value, { authenticated });
+  renderHistory(dom, state.historyItems, historyHandlers(), dom.history.historySearch.value, {
+    authenticated,
+  });
 }
 
 async function syncAuthSession() {
@@ -373,23 +398,31 @@ async function syncAuthSession() {
       await persistSettings();
       renderSettingsPanel();
       renderHistoryPanel(false);
-      setStatus("Session expirée. Reconnecte-toi dans Réglages.", "warn");
+      setStatus("Session expirée. Reconnecte-toi pour analyser.", "warn");
       return;
     }
     throw error;
   }
 }
 
-async function ensureAuthenticated() {
+async function ensureAuthenticated(options = {}) {
   if (state.authToken && state.currentUser) return;
-  throw new Error("Connecte-toi d'abord dans Réglages pour utiliser le backend pro.");
+
+  if (options.interactive !== false) {
+    openModal("account");
+    setStatus("Connecte-toi d'abord pour lancer une analyse.", "warn");
+  }
+
+  throw new Error("Connecte-toi d'abord pour utiliser le backend pro.");
 }
 
 async function refreshHistoryPanel(showMessage = false) {
   if (!state.authToken || !state.currentUser) {
     state.historyItems = [];
     renderHistoryPanel(false);
-    if (showMessage) setStatus("Aucune session active. Connecte-toi pour charger l'historique.", "warn");
+    if (showMessage) {
+      setStatus("Aucune session active. Connecte-toi pour voir l'historique.", "warn");
+    }
     return;
   }
 
@@ -412,6 +445,7 @@ async function refreshHistoryPanel(showMessage = false) {
 
 async function syncForActiveTab() {
   const tab = await getActiveTab();
+
   if (!tab) {
     state.activeTabId = null;
     state.activeTabUrl = "";
@@ -429,7 +463,11 @@ async function syncForActiveTab() {
 
   if (!state.currentResult) {
     dom.docTitle.textContent = state.activeTabTitle;
-    updateSummaryMeta({ sourceKind: /\.pdf($|\?)/i.test(state.activeTabUrl) ? "pdf" : "html" });
+    updateSummaryMeta({
+      sourceKind: /\.pdf($|\?)/i.test(state.activeTabUrl) ? "pdf" : "html",
+      readingTime: null,
+      confidence: "-",
+    });
   }
 
   const selectionState = await getTabState(state.activeTabId);
@@ -439,6 +477,7 @@ async function syncForActiveTab() {
 
 async function refreshSelectionState(cached = null) {
   let selection = cached;
+
   if (!selection && typeof state.activeTabId === "number") {
     const selectionState = await getTabState(state.activeTabId);
     selection = selectionState?.pendingSelection || null;
@@ -454,7 +493,7 @@ async function refreshSelectionState(cached = null) {
 }
 
 async function handlePickClick() {
-  setStatus("Mode ciblage activé : clique sur un bloc de texte dans cette page.", "warn");
+  setStatus("Mode ciblage activé : clique sur un bloc de texte dans la page.", "warn");
 
   try {
     const tab = await getActiveTab();
@@ -467,6 +506,48 @@ async function handlePickClick() {
   } catch (error) {
     setStatus(error?.message || "Impossible d'activer le ciblage.", "error");
   }
+}
+
+async function uploadLocalPdfFromFileUrl(fileUrl) {
+  if (!fileUrl || !fileUrl.startsWith("file:")) {
+    throw new Error("Aucun PDF local à envoyer.");
+  }
+
+  setStatus("PDF local détecté : envoi vers le backend…", "warn");
+
+  let response;
+  try {
+    response = await fetch(fileUrl);
+  } catch (_error) {
+    throw new Error(
+      "Impossible de lire ce PDF local. Vérifie que l'extension a bien “Autoriser l’accès aux URL de fichiers”."
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      "Lecture du PDF local refusée. Active “Autoriser l’accès aux URL de fichiers” dans chrome://extensions."
+    );
+  }
+
+  const bytes = await response.arrayBuffer();
+  const rawName = decodeURIComponent(fileUrl.split("/").pop() || "document.pdf");
+
+  let uploaded;
+  try {
+    uploaded = await uploadPdfFile(dom.settings.backendUrl.value, state.authToken, rawName, bytes);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      throw new Error("Le backend ne propose pas encore /v1/uploads. Il faut ajouter la route d’upload PDF côté API.");
+    }
+    throw error;
+  }
+
+  if (!uploaded?.file_token) {
+    throw new Error("Le backend n'a pas retourné de file_token.");
+  }
+
+  return { fileToken: uploaded.file_token, filename: rawName };
 }
 
 async function buildAnalysisPayload({ preferStoredSelection = false, forceStoredSelection = false } = {}) {
@@ -497,13 +578,33 @@ async function buildAnalysisPayload({ preferStoredSelection = false, forceStored
   }
 
   if (forceStoredSelection) {
-    throw new Error("Aucune sélection enregistrée. Utilise d'abord “Cibler un passage”.");
+    throw new Error("Aucune sélection enregistrée. Clique d'abord sur “Cibler un passage”.");
   }
 
   const preferSelection = dom.analyze.scopeSelect.value === "selection";
   const likelyPdfUrl = /\.pdf($|\?)/i.test(state.activeTabUrl || "");
 
   if (likelyPdfUrl) {
+    const isLocalPdf = state.activeTabUrl.startsWith("file:");
+
+    if (isLocalPdf) {
+      const uploaded = await uploadLocalPdfFromFileUrl(state.activeTabUrl);
+      return {
+        payload: {
+          format: state.currentFormat,
+          scope: "document",
+          title: state.activeTabTitle || uploaded.filename,
+          source_url: state.activeTabUrl,
+          source_type: "pdf",
+          text_content: "",
+          file_token: uploaded.fileToken,
+        },
+        sourceHint: "PDF local transféré puis analysé.",
+        shouldClearSelection: false,
+        sourceKind: "pdf",
+      };
+    }
+
     return {
       payload: {
         format: state.currentFormat,
@@ -513,9 +614,7 @@ async function buildAnalysisPayload({ preferStoredSelection = false, forceStored
         source_type: "pdf",
         text_content: "",
       },
-      sourceHint: state.activeTabUrl.startsWith("file:")
-        ? "PDF local analysé depuis son chemin de fichier."
-        : "PDF analysé depuis son URL.",
+      sourceHint: "PDF analysé depuis son URL.",
       shouldClearSelection: false,
       sourceKind: "pdf",
     };
@@ -523,7 +622,9 @@ async function buildAnalysisPayload({ preferStoredSelection = false, forceStored
 
   const extraction = await extractCurrentTab(tab.id, preferSelection);
   const sourceType = extraction.sourceKind === "pdf" ? "pdf" : "html";
-  const scope = sourceType === "pdf" ? "document" : (extraction.scope || (preferSelection ? "selection" : "document"));
+  const scope = sourceType === "pdf"
+    ? "document"
+    : extraction.scope || (preferSelection ? "selection" : "document");
 
   const payload = {
     format: state.currentFormat,
@@ -531,13 +632,13 @@ async function buildAnalysisPayload({ preferStoredSelection = false, forceStored
     title: extraction.title || state.activeTabTitle,
     source_url: extraction.url || state.activeTabUrl,
     source_type: sourceType,
-    text_content: sourceType === "html" ? (extraction.pageText || "") : "",
+    text_content: sourceType === "html" ? extraction.pageText || "" : "",
   };
 
   let sourceHint = "Page HTML analysée depuis l'onglet courant.";
   if (sourceType === "pdf") {
     sourceHint = extraction.url?.startsWith("file:")
-      ? "PDF local analysé depuis son chemin de fichier."
+      ? "PDF local analysé depuis ton poste."
       : "PDF analysé depuis son URL.";
   } else if (scope === "selection") {
     sourceHint = "Passage sélectionné dans la page HTML.";
@@ -555,7 +656,7 @@ async function pollJobUntilDone(jobId) {
   const startedAt = Date.now();
   let snapshot = null;
 
-  while (Date.now() - startedAt < 300000) {
+  while (Date.now() - startedAt < PROGRESS_TIMEOUT_MS) {
     snapshot = await getAnalysisJob(dom.settings.backendUrl.value, state.authToken, jobId);
     showProgress(snapshot.progress, snapshot.progress_label || "Analyse en cours");
 
@@ -570,7 +671,7 @@ async function pollJobUntilDone(jobId) {
 }
 
 async function runAnalysis(built) {
-  await ensureAuthenticated();
+  await ensureAuthenticated({ interactive: false });
   updateSummaryMeta({ sourceKind: built.sourceKind });
 
   state.lastRequestPayload = built.payload;
@@ -584,9 +685,7 @@ async function runAnalysis(built) {
   }
 
   const normalized = normalizeResultFromJob(finalJob, built.sourceHint);
-  const finalMessage = `${normalized.panel_title} prête. ${built.sourceHint}`;
-
-  hideProgress(finalMessage, "ok");
+  hideProgress(`${normalized.panel_title} prête. ${built.sourceHint}`, "ok");
   applyResultToUi(normalized);
 
   if (built.shouldClearSelection && typeof state.activeTabId === "number") {
@@ -595,15 +694,15 @@ async function runAnalysis(built) {
   }
 
   await refreshHistoryPanel(false);
-  setActiveView("render", true);
   await persistSettings();
 }
 
-async function handleInspectClick() {
-  setLoading(dom, true, "inspect");
+async function withAnalysisFlow(runner, loadingLabel = "inspect") {
+  setLoading(dom, true, loadingLabel);
 
   try {
-    const built = await buildAnalysisPayload({ preferStoredSelection: dom.analyze.scopeSelect.value === "selection" });
+    await ensureAuthenticated({ interactive: true });
+    const built = await runner();
     await runAnalysis(built);
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
@@ -611,7 +710,10 @@ async function handleInspectClick() {
       await persistSettings();
       renderSettingsPanel();
       renderHistoryPanel(false);
-      hideProgress("Session expirée. Reconnecte-toi dans Réglages.", "warn");
+      openModal("account");
+      hideProgress("Session expirée. Reconnecte-toi pour continuer.", "warn");
+    } else if (String(error?.message || "").includes("Connecte-toi d'abord")) {
+      hideProgress(error.message, "warn");
     } else {
       hideProgress(error?.message || "Erreur pendant l'analyse.", "error");
     }
@@ -621,26 +723,14 @@ async function handleInspectClick() {
   }
 }
 
-async function handleAnalyzeSelectionClick() {
-  setLoading(dom, true, "selection");
+async function handleInspectClick() {
+  await withAnalysisFlow(() => buildAnalysisPayload({
+    preferStoredSelection: dom.analyze.scopeSelect.value === "selection",
+  }), "inspect");
+}
 
-  try {
-    const built = await buildAnalysisPayload({ forceStoredSelection: true });
-    await runAnalysis(built);
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 401) {
-      clearSession(true);
-      await persistSettings();
-      renderSettingsPanel();
-      renderHistoryPanel(false);
-      hideProgress("Session expirée. Reconnecte-toi dans Réglages.", "warn");
-    } else {
-      hideProgress(error?.message || "Erreur pendant l'analyse ciblée.", "error");
-    }
-  } finally {
-    await refreshSelectionState();
-    setLoading(dom, false);
-  }
+async function handleAnalyzeSelectionClick() {
+  await withAnalysisFlow(() => buildAnalysisPayload({ forceStoredSelection: true }), "selection");
 }
 
 async function handleCopyClick() {
@@ -650,9 +740,8 @@ async function handleCopyClick() {
     return;
   }
 
-  const text = buildPlainText(result);
-  await navigator.clipboard.writeText(text);
-  setStatus("Rendu copié dans le presse-papiers.", "ok");
+  await navigator.clipboard.writeText(buildPlainText(result));
+  setStatus("Résumé copié dans le presse-papiers.", "ok");
 }
 
 async function handleRefreshClick() {
@@ -664,8 +753,8 @@ async function handleLoginClick(shouldRegister) {
   const password = dom.settings.authPassword.value;
 
   if (!email || !password) {
+    openModal("account");
     setStatus("Renseigne un email et un mot de passe.", "warn");
-    setActiveView("settings", true);
     return;
   }
 
@@ -682,13 +771,11 @@ async function handleLoginClick(shouldRegister) {
     await persistSettings();
     renderSettingsPanel();
     await refreshHistoryPanel(false);
+    closeModal();
     setStatus(`Connecté · ${state.currentUser.email} · ${formatPlan(state.currentUser.plan)}`, "ok");
   } catch (error) {
-    if (error instanceof ApiError) {
-      setStatus(error.message || "Connexion impossible.", "error");
-    } else {
-      setStatus(error?.message || "Connexion impossible.", "error");
-    }
+    setStatus(error?.message || "Connexion impossible.", "error");
+    openModal("account");
   }
 }
 
@@ -698,6 +785,17 @@ async function handleLogoutClick() {
   renderSettingsPanel();
   renderHistoryPanel(false);
   setStatus("Session fermée.", "ok");
+}
+
+async function handleOpenHistoryClick() {
+  if (!state.authToken || !state.currentUser) {
+    openModal("account");
+    setStatus("Connecte-toi pour consulter l'historique.", "warn");
+    return;
+  }
+
+  await refreshHistoryPanel(false);
+  openModal("history");
 }
 
 function historyHandlers() {
@@ -714,6 +812,7 @@ async function previewHistoryEntry(entry) {
   }
 
   if (!state.authToken) {
+    openModal("account");
     setStatus("Reconnecte-toi pour charger cet élément serveur.", "warn");
     return;
   }
@@ -724,10 +823,11 @@ async function previewHistoryEntry(entry) {
     if (job.status !== "done") {
       throw new Error("Ce job n'est pas encore terminé.");
     }
+
     const normalized = normalizeResultFromJob(job, "Rendu rechargé depuis l'historique serveur.");
     hideProgress("Rendu chargé depuis l'historique serveur.", "ok");
     applyResultToUi(normalized);
-    setActiveView("render", true);
+    closeModal();
     await persistSettings();
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
@@ -735,6 +835,7 @@ async function previewHistoryEntry(entry) {
       await persistSettings();
       renderSettingsPanel();
       renderHistoryPanel(false);
+      openModal("account");
       hideProgress("Session expirée. Reconnecte-toi pour recharger l'historique.", "warn");
       return;
     }

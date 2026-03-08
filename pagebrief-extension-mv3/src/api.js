@@ -38,7 +38,10 @@ async function apiRequest(backendUrl, path, options = {}) {
   }
 
   if (!response.ok) {
-    const detail = data?.detail || data?.message || (typeof data === "string" ? data : "Requête refusée.");
+    const detail =
+      data?.detail ||
+      data?.message ||
+      (typeof data === "string" ? data : "Requête refusée.");
     throw new ApiError(detail || `Erreur HTTP ${response.status}.`, response.status, data);
   }
 
@@ -82,20 +85,37 @@ export async function fetchHistory(backendUrl, token) {
   return apiRequest(backendUrl, "/v1/history", { token });
 }
 
+export async function uploadPdfFile(backendUrl, token, filename, bytes) {
+  const formData = new FormData();
+  formData.append(
+    "file",
+    new Blob([bytes], { type: "application/pdf" }),
+    filename || "document.pdf"
+  );
+
+  return apiRequest(backendUrl, "/v1/uploads", {
+    method: "POST",
+    token,
+    body: formData,
+  });
+}
+
 export async function extractCurrentTab(tabId, preferSelection = false) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     func: (preferSelectionInPage) => {
-      const clean = (value) => String(value || "")
-        .replace(/\u00a0/g, " ")
-        .replace(/[ \t]+/g, " ")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
+      const clean = (value) =>
+        String(value || "")
+          .replace(/\u00a0/g, " ")
+          .replace(/[ \t]+/g, " ")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
 
       const selected = clean(window.getSelection ? window.getSelection().toString() : "");
       const url = window.location.href;
       const title = document.title || "";
-      const isPdf = document.contentType === "application/pdf" || /\.pdf($|\?)/i.test(url);
+      const isPdf =
+        document.contentType === "application/pdf" || /\.pdf($|\?)/i.test(url);
 
       let pageText = "";
       let scope = "document";
@@ -104,7 +124,10 @@ export async function extractCurrentTab(tabId, preferSelection = false) {
       if (!isPdf) {
         const preferred = document.querySelector("main, article") || document.body;
         const clone = preferred.cloneNode(true);
-        clone.querySelectorAll("script, style, noscript, svg, canvas").forEach((node) => node.remove());
+        clone
+          .querySelectorAll("script, style, noscript, svg, canvas")
+          .forEach((node) => node.remove());
+
         const raw = clean(clone.innerText || clone.textContent || "");
 
         if (preferSelectionInPage && selected && selected.length >= 40) {

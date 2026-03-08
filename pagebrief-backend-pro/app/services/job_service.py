@@ -50,7 +50,6 @@ def create_job(
     db.commit()
     db.refresh(job)
 
-    # import local APRÈS création du job, AVANT utilisation
     from app.workers.tasks import process_job_task
     process_job_task.delay(str(job.id))
 
@@ -67,20 +66,45 @@ def process_job(db: Session, job_id: str) -> None:
         _update_progress(db, job, 5, "Validation de la demande", "running")
 
         source_text = job.text_content or ""
-        source_type = job.source_type.lower()
+        source_url = (job.source_url or "").strip()
+        source_type = (job.source_type or "html").lower()
 
+        # 1) Cas recommandé : PDF déjà uploadé côté backend
         if job.upload_path:
             _update_progress(db, job, 20, "Lecture du PDF uploadé")
             source_text = extract_pdf_text_from_path(Path(job.upload_path))
             source_type = "pdf"
-        elif not source_text and job.source_url:
-            if source_type == "pdf" or job.source_url.lower().endswith(".pdf") or job.source_url.lower().startswith("file:"):
+
+        # 2) Si pas de texte fourni et qu'on a une URL
+        elif not source_text and source_url:
+            is_local_file = source_url.lower().startswith("file:")
+            is_remote_pdf = (
+                source_type == "pdf"
+                or source_url.lower().endswith(".pdf")
+            )
+
+            # IMPORTANT :
+            # un file:// pointe vers le PC de l'utilisateur, pas vers le conteneur Docker
+            if is_local_file:
+                _update_progress(db, job, 20, "PDF local non transféré")
+                raise ValueError(
+                    "Ce PDF est local à votre ordinateur (file://) et n'est pas accessible depuis le worker Docker. "
+                    "Il faut d'abord envoyer le fichier au backend (file_token) avant l'analyse."
+                )
+
+            if is_remote_pdf:
                 _update_progress(db, job, 20, "Récupération du PDF")
-                source_text = fetch_pdf_text_from_url(job.source_url, timeout_s=30, user_agent=USER_AGENT)
+                source_text = fetch_pdf_text_from_url(
+                    source_url,
+                    timeout_s=30,
+                    user_agent=USER_AGENT,
+                )
                 source_type = "pdf"
             else:
                 _update_progress(db, job, 20, "Le frontend doit fournir le texte HTML.")
-                raise ValueError("Le texte HTML doit être fourni par l'extension pour les pages web.")
+                raise ValueError(
+                    "Le texte HTML doit être fourni par l'extension pour les pages web."
+                )
 
         if not source_text.strip():
             raise ValueError("Aucun contenu exploitable à analyser.")
@@ -89,12 +113,14 @@ def process_job(db: Session, job_id: str) -> None:
         result, reading_time = summarize_document(job.format, source_text, job.title, source_type)
 
         _update_progress(db, job, 90, "Finalisation du rendu")
+
         job.result_payload = json.dumps(result, ensure_ascii=False)
         job.reading_time_min = reading_time
         job.confidence = result.get("confidence", "moyenne")
         job.status = "done"
         job.progress = 100
         job.progress_label = "Analyse terminée"
+        job.error_message = None
 
         excerpt = " ".join((result.get("intro_lines") or [])[:2])[:240]
         history = HistoryItem(
@@ -106,24 +132,41 @@ def process_job(db: Session, job_id: str) -> None:
             format=job.format,
             source_type=source_type,
         )
+
+        db.add(job)
         db.add(history)
-        db.flush()
+        db.commit()
+        db.refresh(job)
+
         logger.info("Job %s terminé.", job.id)
+
     except Exception as exc:
         logger.exception("Job %s en erreur.", job.id)
+
         job.status = "failed"
         job.error_message = str(exc)
-        job.progress = min(max(job.progress, 0), 99)
+        job.progress = min(max(job.progress or 0, 0), 99)
         job.progress_label = "Analyse échouée"
 
+        db.add(job)
+        db.commit()
 
-def _update_progress(db: Session, job: AnalysisJob, progress: int, label: str, status: str | None = None) -> None:
+
+def _update_progress(
+    db: Session,
+    job: AnalysisJob,
+    progress: int,
+    label: str,
+    status: str | None = None,
+) -> None:
     job.progress = progress
     job.progress_label = label
     if status:
         job.status = status
+
     db.add(job)
     db.commit()
+    db.refresh(job)
 
 
 def serialize_job(job: AnalysisJob) -> dict:

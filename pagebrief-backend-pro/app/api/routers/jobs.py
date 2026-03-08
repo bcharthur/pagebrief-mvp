@@ -20,20 +20,41 @@ from app.services.usage import ensure_daily_quota, ensure_format_allowed
 router = APIRouter(prefix="/v1", tags=["jobs"])
 
 
+def _handle_pdf_upload(file: UploadFile) -> UploadResponse:
+    settings = get_settings()
+
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Seuls les PDF sont acceptés.")
+
+    token, path, size_bytes = save_upload(file)
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+
+    if size_bytes > max_bytes:
+        path.unlink(missing_ok=True)
+        raise HTTPException(status_code=413, detail="Fichier trop volumineux.")
+
+    return UploadResponse(
+        file_token=token,
+        filename=file.filename or "document.pdf",
+        size_bytes=size_bytes,
+    )
+
+
 @router.post("/files/upload", response_model=UploadResponse)
 def upload_pdf(
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
 ) -> UploadResponse:
-    settings = get_settings()
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Seuls les PDF sont acceptés.")
-    token, path, size_bytes = save_upload(file)
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    if size_bytes > max_bytes:
-        path.unlink(missing_ok=True)
-        raise HTTPException(status_code=413, detail="Fichier trop volumineux.")
-    return UploadResponse(file_token=token, filename=file.filename or "document.pdf", size_bytes=size_bytes)
+    return _handle_pdf_upload(file)
+
+
+# Alias de compatibilité si le frontend appelle encore /v1/uploads
+@router.post("/uploads", response_model=UploadResponse)
+def upload_pdf_legacy(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+) -> UploadResponse:
+    return _handle_pdf_upload(file)
 
 
 @router.post("/jobs", response_model=JobCreateResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -59,7 +80,7 @@ def create_analysis_job(
         text_content=payload.text_content,
         file_token=payload.file_token,
     )
-    db.commit()
+
     return JobCreateResponse(
         job_id=job.id,
         status=job.status,
@@ -93,20 +114,26 @@ async def stream_analysis_job(
     async def event_stream() -> AsyncGenerator[str, None]:
         last_state = None
         idle_loops = 0
+
         while True:
             local_job = db.get(AnalysisJob, job_id)
             if not local_job or local_job.user_id != user.id:
                 break
+
             payload = serialize_job(local_job)
             state = json.dumps(payload, default=str, ensure_ascii=False)
+
             if state != last_state:
                 yield f"data: {state}\n\n"
                 last_state = state
+
             if local_job.status in {"done", "failed"}:
                 break
+
             idle_loops += 1
             if idle_loops > 600:
                 break
+
             await asyncio.sleep(1)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

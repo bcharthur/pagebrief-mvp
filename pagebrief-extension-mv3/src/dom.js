@@ -1,23 +1,26 @@
 export const dom = {
-  menuToggle: document.getElementById("menuToggle"),
-  closeDrawerBtn: document.getElementById("closeDrawerBtn"),
-  menuDrawer: document.getElementById("menuDrawer"),
-  navItems: Array.from(document.querySelectorAll("[data-view-target]")),
   accordionTriggers: Array.from(document.querySelectorAll("[data-accordion-target]")),
 
   docTitle: document.getElementById("docTitle"),
   sourceBadge: document.getElementById("sourceBadge"),
   readingTime: document.getElementById("readingTime"),
   confidencePill: document.getElementById("confidencePill"),
+  currentTargetMeta: document.getElementById("currentTargetMeta"),
+  sessionPill: document.getElementById("sessionPill"),
   statusBar: document.getElementById("statusBar"),
+  statusPercent: document.getElementById("statusPercent"),
   statusProgressWrap: document.getElementById("statusProgressWrap"),
   statusProgressFill: document.getElementById("statusProgressFill"),
 
-  views: {
-    render: document.getElementById("renderView"),
-    analyze: document.getElementById("analyzeView"),
-    history: document.getElementById("historyView"),
-    settings: document.getElementById("settingsView"),
+  openHistoryBtn: document.getElementById("openHistoryBtn"),
+  openAccountBtn: document.getElementById("openAccountBtn"),
+
+  modals: {
+    overlay: document.getElementById("modalOverlay"),
+    history: document.getElementById("historyModal"),
+    account: document.getElementById("accountModal"),
+    closeHistoryBtn: document.getElementById("closeHistoryModalBtn"),
+    closeAccountBtn: document.getElementById("closeAccountModalBtn"),
   },
 
   render: {
@@ -45,7 +48,7 @@ export const dom = {
     analyzeSelectionBtn: document.getElementById("analyzeSelectionBtn"),
     selectionStateTitle: document.getElementById("selectionStateTitle"),
     selectionStateText: document.getElementById("selectionStateText"),
-    currentTargetTitle: document.getElementById("currentTargetTitle"),
+    currentTargetTitle: document.getElementById("docTitle"),
     currentTargetMeta: document.getElementById("currentTargetMeta"),
     formatGuideTitle: document.getElementById("formatGuideTitle"),
     formatGuideSummary: document.getElementById("formatGuideSummary"),
