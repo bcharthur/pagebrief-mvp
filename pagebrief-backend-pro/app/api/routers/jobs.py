@@ -48,7 +48,6 @@ def upload_pdf(
     return _handle_pdf_upload(file)
 
 
-# Alias de compatibilité si le frontend appelle encore /v1/uploads
 @router.post("/uploads", response_model=UploadResponse)
 def upload_pdf_legacy(
     file: UploadFile = File(...),
@@ -79,6 +78,10 @@ def create_analysis_job(
         source_url=payload.source_url or "",
         text_content=payload.text_content,
         file_token=payload.file_token,
+        selected_text=payload.selected_text,
+        page_number=payload.page_number,
+        page_from=payload.page_from,
+        page_to=payload.page_to,
     )
 
     return JobCreateResponse(
