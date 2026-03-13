@@ -7,7 +7,10 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.db.models import AnalysisJob, HistoryItem, User
-from app.services.fetcher import extract_pdf_text_from_path, fetch_pdf_text_from_url
+from app.services.fetcher import (
+    extract_pdf_document_from_path,
+    fetch_pdf_document_from_url,
+)
 from app.services.storage import resolve_upload_token
 from app.services.summarizer import summarize_document
 
@@ -27,6 +30,10 @@ def create_job(
     source_url: str,
     text_content: str,
     file_token: str | None,
+    selected_text: str | None = None,
+    page_number: int | None = None,
+    page_from: int | None = None,
+    page_to: int | None = None,
 ) -> AnalysisJob:
     upload_path = None
     if file_token:
@@ -41,6 +48,10 @@ def create_job(
         source_url=source_url,
         text_content=text_content,
         upload_path=upload_path,
+        selected_text=selected_text,
+        page_number=page_number,
+        page_from=page_from,
+        page_to=page_to,
         progress=0,
         progress_label="En file d'attente",
         status="queued",
@@ -51,8 +62,8 @@ def create_job(
     db.refresh(job)
 
     from app.workers.tasks import process_job_task
-    process_job_task.delay(str(job.id))
 
+    process_job_task.delay(str(job.id))
     return job
 
 
@@ -68,23 +79,20 @@ def process_job(db: Session, job_id: str) -> None:
         source_text = job.text_content or ""
         source_url = (job.source_url or "").strip()
         source_type = (job.source_type or "html").lower()
+        extracted_document = None
 
-        # 1) Cas recommandé : PDF déjà uploadé côté backend
         if job.upload_path:
             _update_progress(db, job, 20, "Lecture du PDF uploadé")
-            source_text = extract_pdf_text_from_path(Path(job.upload_path))
+            extracted_document = extract_pdf_document_from_path(Path(job.upload_path))
+            source_text = extracted_document.merged_text
             source_type = "pdf"
+            if not job.title:
+                job.title = extracted_document.title
 
-        # 2) Si pas de texte fourni et qu'on a une URL
         elif not source_text and source_url:
             is_local_file = source_url.lower().startswith("file:")
-            is_remote_pdf = (
-                source_type == "pdf"
-                or source_url.lower().endswith(".pdf")
-            )
+            is_remote_pdf = source_type == "pdf" or source_url.lower().endswith(".pdf")
 
-            # IMPORTANT :
-            # un file:// pointe vers le PC de l'utilisateur, pas vers le conteneur Docker
             if is_local_file:
                 _update_progress(db, job, 20, "PDF local non transféré")
                 raise ValueError(
@@ -94,26 +102,40 @@ def process_job(db: Session, job_id: str) -> None:
 
             if is_remote_pdf:
                 _update_progress(db, job, 20, "Récupération du PDF")
-                source_text = fetch_pdf_text_from_url(
+                extracted_document = fetch_pdf_document_from_url(
                     source_url,
                     timeout_s=30,
                     user_agent=USER_AGENT,
                 )
+                source_text = extracted_document.merged_text
                 source_type = "pdf"
+                if not job.title:
+                    job.title = extracted_document.title
             else:
-                _update_progress(db, job, 20, "Le frontend doit fournir le texte HTML.")
-                raise ValueError(
-                    "Le texte HTML doit être fourni par l'extension pour les pages web."
-                )
+                _update_progress(db, job, 20, "Le frontend doit fournir le texte HTML")
+                raise ValueError("Le texte HTML doit être fourni par l'extension pour les pages web.")
 
-        if not source_text.strip():
+        if not source_text.strip() and not (job.selected_text or "").strip():
             raise ValueError("Aucun contenu exploitable à analyser.")
 
         _update_progress(db, job, 45, "Préparation de l'analyse")
-        result, reading_time = summarize_document(job.format, source_text, job.title, source_type)
+        result, reading_time = summarize_document(
+            format_name=job.format,
+            raw_text=source_text,
+            title=job.title,
+            source_type=source_type,
+            scope=job.scope,
+            selected_text=job.selected_text,
+            page_number=job.page_number,
+            page_from=job.page_from,
+            page_to=job.page_to,
+            extracted_document=extracted_document,
+        )
 
+        _validate_summary_result(result)
         _update_progress(db, job, 90, "Finalisation du rendu")
 
+        job.source_type = source_type
         job.result_payload = json.dumps(result, ensure_ascii=False)
         job.reading_time_min = reading_time
         job.confidence = result.get("confidence", "moyenne")
@@ -137,19 +159,27 @@ def process_job(db: Session, job_id: str) -> None:
         db.add(history)
         db.commit()
         db.refresh(job)
-
         logger.info("Job %s terminé.", job.id)
 
     except Exception as exc:
         logger.exception("Job %s en erreur.", job.id)
-
         job.status = "failed"
         job.error_message = str(exc)
         job.progress = min(max(job.progress or 0, 0), 99)
         job.progress_label = "Analyse échouée"
-
         db.add(job)
         db.commit()
+
+
+def _validate_summary_result(result: dict) -> None:
+    intro = [item for item in (result.get("intro_lines") or []) if str(item).strip()]
+    key_points = [item for item in (result.get("key_points") or []) if str(item).strip()]
+    if not intro:
+        raise ValueError("Résumé invalide : introduction vide.")
+    if not key_points:
+        raise ValueError("Résumé invalide : points clés vides.")
+    if len(" ".join(key_points)) < 60:
+        raise ValueError("Résumé invalide : points clés trop pauvres.")
 
 
 def _update_progress(
